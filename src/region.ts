@@ -1,19 +1,19 @@
-import { composeLocalCs, gAtLocalC } from './maps';
+import { composeLocalCs, gAtLocalC } from "./maps";
 
 const CSS_SIZE = 600;
 const PADDING = 48;
-const GRID_COLOR = '#e5e7eb';
-const AXIS_COLOR = '#94a3b8';
-const IDENTITY_COLOR = '#cbd5e1';
-const SINGLE_GRAPH_COLOR = '#2563eb';
-const COMPOSITION_COLOR = '#b45309';
-const POINT_COLOR = '#dc2626';
-const TEXT_COLOR = '#334155';
-const GRAPH_FLATNESS_PX = 0.75;
-const MAX_GRAPH_DEPTH = 14;
-const MIN_GRAPH_SPAN = 1 / 4096;
+const GRID_COLOR = "#e5e7eb";
+const AXIS_COLOR = "#94a3b8";
+const IDENTITY_COLOR = "#cbd5e1";
+const SINGLE_GRAPH_COLOR = "#2563eb";
+const COMPOSITION_COLOR = "#b45309";
+const POINT_COLOR = "#dc2626";
+const TEXT_COLOR = "#334155";
+const GRAPH_FLATNESS_PX = 0.25;
+const MAX_GRAPH_DEPTH = 16;
+const MIN_GRAPH_SPAN = 1 / 16384;
 
-export type GraphMode = 'single' | 'composition';
+export type GraphMode = "single" | "composition";
 
 export interface RegionRenderer {
   render(): void;
@@ -32,22 +32,24 @@ interface GraphPoint {
   y: number;
 }
 
-export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer {
-  const context = canvas.getContext('2d');
+export function createRegionRenderer(
+  canvas: HTMLCanvasElement,
+): RegionRenderer {
+  const context = canvas.getContext("2d");
   if (!context) {
-    throw new Error('2D canvas not supported');
+    throw new Error("2D canvas not supported");
   }
   const ctx = context;
 
   const dpr = window.devicePixelRatio || 1;
   canvas.width = CSS_SIZE * dpr;
   canvas.height = CSS_SIZE * dpr;
-  canvas.style.width = CSS_SIZE + 'px';
-  canvas.style.height = CSS_SIZE + 'px';
+  canvas.style.width = CSS_SIZE + "px";
+  canvas.style.height = CSS_SIZE + "px";
   ctx.scale(dpr, dpr);
 
   const plotSize = CSS_SIZE - 2 * PADDING;
-  let mode: GraphMode = 'single';
+  let mode: GraphMode = "single";
   let singleParameter = 0.5;
   let localCs = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
   let startValue = 0.25;
@@ -71,7 +73,10 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
       return Math.hypot(point.x - start.x, point.y - start.y);
     }
 
-    const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / len2));
+    const t = Math.max(
+      0,
+      Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / len2),
+    );
     const projX = start.x + t * dx;
     const projY = start.y + t * dy;
     return Math.hypot(point.x - projX, point.y - projY);
@@ -79,14 +84,14 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
 
   function drawFrame(): void {
     ctx.clearRect(0, 0, CSS_SIZE, CSS_SIZE);
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, CSS_SIZE, CSS_SIZE);
 
     ctx.fillStyle = TEXT_COLOR;
-    ctx.font = '13px monospace';
-    ctx.fillText('0', PADDING - 10, CSS_SIZE - PADDING + 18);
-    ctx.fillText('1', CSS_SIZE - PADDING - 4, CSS_SIZE - PADDING + 18);
-    ctx.fillText('1', PADDING - 18, PADDING + 4);
+    ctx.font = "13px monospace";
+    ctx.fillText("0", PADDING - 10, CSS_SIZE - PADDING + 18);
+    ctx.fillText("1", CSS_SIZE - PADDING - 4, CSS_SIZE - PADDING + 18);
+    ctx.fillText("1", PADDING - 18, PADDING + 4);
 
     ctx.strokeStyle = GRID_COLOR;
     ctx.lineWidth = 1;
@@ -120,7 +125,7 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
   }
 
   function evaluate(x: number): number {
-    if (mode === 'single') {
+    if (mode === "single") {
       return gAtLocalC(singleParameter, x);
     }
     return composeLocalCs(localCs, x);
@@ -131,7 +136,11 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
     const end: GraphPoint = { x: 1, y: evaluate(1) };
     const output: GraphPoint[] = [start];
 
-    function subdivide(left: GraphPoint, right: GraphPoint, depth: number): void {
+    function subdivide(
+      left: GraphPoint,
+      right: GraphPoint,
+      depth: number,
+    ): void {
       const span = right.x - left.x;
       if (depth >= MAX_GRAPH_DEPTH || span <= MIN_GRAPH_SPAN) {
         output.push(right);
@@ -148,7 +157,11 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
         const x = left.x + span * fraction;
         const point: GraphPoint = { x, y: evaluate(x) };
         const canvasPoint = toCanvas(point.x, point.y);
-        const deviation = distanceToSegment(canvasPoint, leftCanvas, rightCanvas);
+        const deviation = distanceToSegment(
+          canvasPoint,
+          leftCanvas,
+          rightCanvas,
+        );
 
         if (deviation > worstDeviation) {
           worstDeviation = deviation;
@@ -182,7 +195,8 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
       }
     }
 
-    ctx.strokeStyle = mode === 'single' ? SINGLE_GRAPH_COLOR : COMPOSITION_COLOR;
+    ctx.strokeStyle =
+      mode === "single" ? SINGLE_GRAPH_COLOR : COMPOSITION_COLOR;
     ctx.lineWidth = 2.5;
     ctx.stroke();
   }
@@ -209,22 +223,21 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
     ctx.fill();
 
     ctx.fillStyle = TEXT_COLOR;
-    ctx.font = '13px monospace';
-    const label = mode === 'single'
-      ? `(${x.toFixed(3)}, g_c(x) = ${y.toFixed(3)})`
-      : `(${x.toFixed(3)}, G(x) = ${y.toFixed(3)})`;
+    ctx.font = "13px monospace";
+    const label =
+      mode === "single"
+        ? `(${x.toFixed(3)}, g_c(x) = ${y.toFixed(3)})`
+        : `(${x.toFixed(3)}, G(x) = ${y.toFixed(3)})`;
     ctx.fillText(label, PADDING, 24);
   }
 
   function drawLabels(): void {
     ctx.fillStyle = TEXT_COLOR;
-    ctx.font = '13px monospace';
-    ctx.fillText('x', CSS_SIZE - PADDING + 10, CSS_SIZE - PADDING + 4);
-    ctx.fillText('y', PADDING - 4, PADDING - 12);
+    ctx.font = "13px monospace";
+    ctx.fillText("x", CSS_SIZE - PADDING + 10, CSS_SIZE - PADDING + 4);
+    ctx.fillText("y", PADDING - 4, PADDING - 12);
 
-    const title = mode === 'single'
-      ? 'g_c'
-      : 'G = g_c5 o ... o g_c0';
+    const title = mode === "single" ? "g_c" : "G = g_c5 o ... o g_c0";
     ctx.fillText(title, PADDING, CSS_SIZE - 16);
   }
 

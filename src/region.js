@@ -1,33 +1,33 @@
-import { composeLocalCs, gAtLocalC } from './maps';
+import { composeLocalCs, gAtLocalC } from "./maps";
 const CSS_SIZE = 600;
 const PADDING = 48;
-const GRID_COLOR = '#e5e7eb';
-const AXIS_COLOR = '#94a3b8';
-const IDENTITY_COLOR = '#cbd5e1';
-const SINGLE_GRAPH_COLOR = '#2563eb';
-const COMPOSITION_COLOR = '#b45309';
-const POINT_COLOR = '#dc2626';
-const TEXT_COLOR = '#334155';
-const GRAPH_FLATNESS_PX = 0.75;
-const MAX_GRAPH_DEPTH = 14;
-const MIN_GRAPH_SPAN = 1 / 4096;
+const GRID_COLOR = "#e5e7eb";
+const AXIS_COLOR = "#94a3b8";
+const IDENTITY_COLOR = "#cbd5e1";
+const SINGLE_GRAPH_COLOR = "#2563eb";
+const COMPOSITION_COLOR = "#b45309";
+const POINT_COLOR = "#dc2626";
+const TEXT_COLOR = "#334155";
+const GRAPH_FLATNESS_PX = 0.25;
+const MAX_GRAPH_DEPTH = 16;
+const MIN_GRAPH_SPAN = 1 / 16384;
 function clamp01(value) {
     return Math.max(0, Math.min(1, value));
 }
 export function createRegionRenderer(canvas) {
-    const context = canvas.getContext('2d');
+    const context = canvas.getContext("2d");
     if (!context) {
-        throw new Error('2D canvas not supported');
+        throw new Error("2D canvas not supported");
     }
     const ctx = context;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = CSS_SIZE * dpr;
     canvas.height = CSS_SIZE * dpr;
-    canvas.style.width = CSS_SIZE + 'px';
-    canvas.style.height = CSS_SIZE + 'px';
+    canvas.style.width = CSS_SIZE + "px";
+    canvas.style.height = CSS_SIZE + "px";
     ctx.scale(dpr, dpr);
     const plotSize = CSS_SIZE - 2 * PADDING;
-    let mode = 'single';
+    let mode = "single";
     let singleParameter = 0.5;
     let localCs = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
     let startValue = 0.25;
@@ -51,13 +51,13 @@ export function createRegionRenderer(canvas) {
     }
     function drawFrame() {
         ctx.clearRect(0, 0, CSS_SIZE, CSS_SIZE);
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, CSS_SIZE, CSS_SIZE);
         ctx.fillStyle = TEXT_COLOR;
-        ctx.font = '13px monospace';
-        ctx.fillText('0', PADDING - 10, CSS_SIZE - PADDING + 18);
-        ctx.fillText('1', CSS_SIZE - PADDING - 4, CSS_SIZE - PADDING + 18);
-        ctx.fillText('1', PADDING - 18, PADDING + 4);
+        ctx.font = "13px monospace";
+        ctx.fillText("0", PADDING - 10, CSS_SIZE - PADDING + 18);
+        ctx.fillText("1", CSS_SIZE - PADDING - 4, CSS_SIZE - PADDING + 18);
+        ctx.fillText("1", PADDING - 18, PADDING + 4);
         ctx.strokeStyle = GRID_COLOR;
         ctx.lineWidth = 1;
         for (const tick of [0.25, 0.5, 0.75]) {
@@ -86,7 +86,7 @@ export function createRegionRenderer(canvas) {
         ctx.setLineDash([]);
     }
     function evaluate(x) {
-        if (mode === 'single') {
+        if (mode === "single") {
             return gAtLocalC(singleParameter, x);
         }
         return composeLocalCs(localCs, x);
@@ -138,7 +138,8 @@ export function createRegionRenderer(canvas) {
                 ctx.lineTo(point.x, point.y);
             }
         }
-        ctx.strokeStyle = mode === 'single' ? SINGLE_GRAPH_COLOR : COMPOSITION_COLOR;
+        ctx.strokeStyle =
+            mode === "single" ? SINGLE_GRAPH_COLOR : COMPOSITION_COLOR;
         ctx.lineWidth = 2.5;
         ctx.stroke();
     }
@@ -160,20 +161,18 @@ export function createRegionRenderer(canvas) {
         ctx.arc(point.x, point.y, 5, 0, 2 * Math.PI);
         ctx.fill();
         ctx.fillStyle = TEXT_COLOR;
-        ctx.font = '13px monospace';
-        const label = mode === 'single'
+        ctx.font = "13px monospace";
+        const label = mode === "single"
             ? `(${x.toFixed(3)}, g_c(x) = ${y.toFixed(3)})`
             : `(${x.toFixed(3)}, G(x) = ${y.toFixed(3)})`;
         ctx.fillText(label, PADDING, 24);
     }
     function drawLabels() {
         ctx.fillStyle = TEXT_COLOR;
-        ctx.font = '13px monospace';
-        ctx.fillText('x', CSS_SIZE - PADDING + 10, CSS_SIZE - PADDING + 4);
-        ctx.fillText('y', PADDING - 4, PADDING - 12);
-        const title = mode === 'single'
-            ? 'g_c'
-            : 'G = g_c5 o ... o g_c0';
+        ctx.font = "13px monospace";
+        ctx.fillText("x", CSS_SIZE - PADDING + 10, CSS_SIZE - PADDING + 4);
+        ctx.fillText("y", PADDING - 4, PADDING - 12);
+        const title = mode === "single" ? "g_c" : "G = g_c5 o ... o g_c0";
         ctx.fillText(title, PADDING, CSS_SIZE - 16);
     }
     return {

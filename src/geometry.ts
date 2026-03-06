@@ -33,6 +33,10 @@ export function pointInTriangle(p: Point, v0: Point, v1: Point, v2: Point): bool
          (cross01 <= 0 && cross12 <= 0 && cross20 <= 0);
 }
 
+export function pointInCircle(p: Point, center: Point, radius: number): boolean {
+  return distance(p, center) <= radius;
+}
+
 export function distanceToSegment(p: Point, a: Point, b: Point): number {
   const abx = b.x - a.x;
   const aby = b.y - a.y;
@@ -50,6 +54,10 @@ export function distanceToTriangleBorder(p: Point, verts: [Point, Point, Point])
     distanceToSegment(p, verts[1], verts[2]),
     distanceToSegment(p, verts[2], verts[0]),
   );
+}
+
+export function distanceToCircleBorder(p: Point, center: Point, radius: number): number {
+  return Math.abs(distance(p, center) - radius);
 }
 
 export function closestPointOnSegment(p: Point, a: Point, b: Point): Point {
@@ -76,6 +84,22 @@ export function clampPointToTriangle(p: Point, v0: Point, v1: Point, v2: Point):
     if (d < bestDist) { best = candidates[i]; bestDist = d; }
   }
   return best;
+}
+
+export function clampPointToCircle(p: Point, center: Point, radius: number): Point {
+  const dx = p.x - center.x;
+  const dy = p.y - center.y;
+  const len = Math.hypot(dx, dy);
+
+  if (len <= radius || len === 0) {
+    return p;
+  }
+
+  const scale = radius / len;
+  return {
+    x: center.x + dx * scale,
+    y: center.y + dy * scale,
+  };
 }
 
 export function cross(a: Point, b: Point): number {
@@ -118,4 +142,31 @@ export function rayPolygonExitDistance(origin: Point, direction: Point, polygon:
   }
 
   return best;
+}
+
+export function rayCircleExitDistance(
+  origin: Point,
+  direction: Point,
+  center: Point,
+  radius: number,
+): number | null {
+  const dirLength = Math.hypot(direction.x, direction.y);
+  if (dirLength === 0) return null;
+
+  const dir = { x: direction.x / dirLength, y: direction.y / dirLength };
+  const offset = subtract(origin, center);
+  const b = 2 * (offset.x * dir.x + offset.y * dir.y);
+  const c = offset.x * offset.x + offset.y * offset.y - radius * radius;
+  const disc = b * b - 4 * c;
+  const EPS = 1e-9;
+
+  if (disc < -EPS) return null;
+
+  const sqrtDisc = Math.sqrt(Math.max(disc, 0));
+  const t1 = (-b - sqrtDisc) / 2;
+  const t2 = (-b + sqrtDisc) / 2;
+  const hits = [t1, t2].filter((t) => t >= -EPS);
+  if (hits.length === 0) return null;
+
+  return Math.max(...hits, 0);
 }

@@ -1,9 +1,9 @@
-import type { Point, TriangleState } from './types';
-import { mathToCanvas } from './coords';
-import { rayPolygonExitDistance } from './geometry';
+import type { Point, ShapeMode, TriangleState } from './types';
+import { mathToCanvas, scaleToCanvas } from './coords';
+import { rayCircleExitDistance, rayPolygonExitDistance } from './geometry';
 import { HEXAGON_VERTICES } from './hexagon';
 
-const CIRCUMRADIUS = 1 / Math.sqrt(3);
+export const CIRCUMRADIUS = 1 / Math.sqrt(3);
 const LIGHT_BLUE = '#89CFF0';
 
 export function getVertices(state: TriangleState): [Point, Point, Point] {
@@ -45,6 +45,33 @@ export function drawTriangle(ctx: CanvasRenderingContext2D, state: TriangleState
   ctx.stroke();
 }
 
+export function drawCircle(ctx: CanvasRenderingContext2D, state: TriangleState): void {
+  const center = mathToCanvas(state.position);
+
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, scaleToCanvas(CIRCUMRADIUS), 0, 2 * Math.PI);
+  ctx.strokeStyle = LIGHT_BLUE;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+export function drawShape(
+  ctx: CanvasRenderingContext2D,
+  state: TriangleState,
+  shapeMode: ShapeMode,
+): void {
+  if (shapeMode === 'local-c') {
+    return;
+  }
+
+  if (shapeMode === 'circle') {
+    drawCircle(ctx, state);
+    return;
+  }
+
+  drawTriangle(ctx, state);
+}
+
 export function drawControlPoint(ctx: CanvasRenderingContext2D, state: TriangleState): void {
   const cp = mathToCanvas(state.controlPoint);
   const radius = 4;
@@ -58,12 +85,18 @@ export function drawControlPoint(ctx: CanvasRenderingContext2D, state: TriangleS
   ctx.stroke();
 }
 
-export function getInnerGammas(state: TriangleState): number[] {
-  const verts = getVertices(state);
+export function getInnerGammas(state: TriangleState, shapeMode: ShapeMode): number[] {
+  if (shapeMode === 'local-c') {
+    return HEXAGON_VERTICES.map(() => 0);
+  }
+
+  const verts = shapeMode === 'triangle' ? getVertices(state) : null;
   const origin = { x: 0, y: 0 };
 
   return HEXAGON_VERTICES.map((vertex) => {
-    const distance = rayPolygonExitDistance(origin, vertex, verts);
+    const distance = shapeMode === 'circle'
+      ? rayCircleExitDistance(origin, vertex, state.position, CIRCUMRADIUS)
+      : rayPolygonExitDistance(origin, vertex, verts!);
     return distance ?? 0;
   });
 }

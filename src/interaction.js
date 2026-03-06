@@ -1,11 +1,12 @@
 import { canvasToMath, scaleToMath } from './coords';
-import { closestPointOnSegment, clampPointToTriangle, distance, distanceToSegment, distanceToTriangleBorder, pointInTriangle, rotatePoint, } from './geometry';
+import { closestPointOnSegment, clampPointToCircle, clampPointToTriangle, distance, distanceToCircleBorder, distanceToSegment, distanceToTriangleBorder, pointInCircle, pointInTriangle, rotatePoint, } from './geometry';
 import { HEXAGON_VERTICES } from './hexagon';
-import { getVertices, getValidRegion } from './triangle';
+import { CIRCUMRADIUS, getVertices, getValidRegion } from './triangle';
+const LOCAL_C_HIT_PX = 8;
 const CONTROL_POINT_HIT_PX = 8;
 const BORDER_HIT_PX = 6;
 const START_EDGE_HIT_PX = 8;
-export function setupInteraction(canvas, state, render, onStartValueSelect) {
+export function setupInteraction(canvas, state, getShapeMode, getGammas, getLocalCs, onLocalCChange, render, onStartValueSelect) {
     let interaction = { kind: 'idle' };
     function getMouseMath(e) {
         const rect = canvas.getBoundingClientRect();
@@ -14,17 +15,66 @@ export function setupInteraction(canvas, state, render, onStartValueSelect) {
             y: e.clientY - rect.top,
         });
     }
+    function localCPoint(index, localC) {
+        const vertex = HEXAGON_VERTICES[index];
+        const radius = 1 - localC;
+        return {
+            x: vertex.x * radius,
+            y: vertex.y * radius,
+        };
+    }
+    function getLocalCHandleIndex(mouse) {
+        if (getShapeMode() !== 'local-c') {
+            return null;
+        }
+        let bestIndex = null;
+        let bestDistance = Infinity;
+        const localCs = getLocalCs();
+        for (let i = 0; i < localCs.length; i++) {
+            const handle = localCPoint(i, localCs[i]);
+            const handleDistance = distance(mouse, handle);
+            if (handleDistance > scaleToMath(LOCAL_C_HIT_PX) || handleDistance >= bestDistance) {
+                continue;
+            }
+            bestDistance = handleDistance;
+            bestIndex = i;
+        }
+        return bestIndex;
+    }
+    function projectLocalC(mouse, index) {
+        const gamma = Math.max(0, Math.min(1, getGammas()[index] ?? 0));
+        const boundary = localCPoint(index, 1 - gamma);
+        const vertex = HEXAGON_VERTICES[index];
+        const closest = closestPointOnSegment(mouse, boundary, vertex);
+        return Math.max(0, Math.min(1 - gamma, distance(closest, vertex)));
+    }
     function hitTest(mouse) {
+        const localCHandleIndex = getLocalCHandleIndex(mouse);
+        if (localCHandleIndex !== null) {
+            return { kind: 'local-c-handle', index: localCHandleIndex };
+        }
+        const shapeMode = getShapeMode();
+        if (shapeMode === 'local-c') {
+            return { kind: 'none' };
+        }
+        if (shapeMode === 'circle') {
+            const borderDist = distanceToCircleBorder(mouse, state.position, CIRCUMRADIUS);
+            if (borderDist <= scaleToMath(BORDER_HIT_PX))
+                return { kind: 'border' };
+            if (pointInCircle(mouse, state.position, CIRCUMRADIUS))
+                return { kind: 'interior' };
+            return { kind: 'none' };
+        }
         const cpDist = distance(mouse, state.controlPoint);
         if (cpDist <= scaleToMath(CONTROL_POINT_HIT_PX))
-            return 'control-point';
+            return { kind: 'control-point' };
         const verts = getVertices(state);
         const borderDist = distanceToTriangleBorder(mouse, verts);
         if (borderDist <= scaleToMath(BORDER_HIT_PX))
-            return 'border';
+            return { kind: 'border' };
         if (pointInTriangle(mouse, verts[0], verts[1], verts[2]))
-            return 'interior';
-        return 'none';
+            return { kind: 'interior' };
+        return { kind: 'none' };
     }
     function projectStartValue(mouse) {
         const start = HEXAGON_VERTICES[5];
@@ -53,12 +103,13 @@ export function setupInteraction(canvas, state, render, onStartValueSelect) {
     }
     function updateCursor(mouse) {
         const hit = hitTest(mouse);
-        switch (hit) {
+        switch (hit.kind) {
+            case 'local-c-handle':
             case 'control-point':
                 canvas.style.cursor = 'pointer';
                 break;
             case 'border':
-                canvas.style.cursor = 'alias';
+                canvas.style.cursor = getShapeMode() === 'circle' ? 'move' : 'alias';
                 break;
             case 'interior':
                 canvas.style.cursor = 'move';
@@ -70,7 +121,16 @@ export function setupInteraction(canvas, state, render, onStartValueSelect) {
     function onMouseDown(e) {
         const mouse = getMouseMath(e);
         const hit = hitTest(mouse);
-        switch (hit) {
+        const shapeMode = getShapeMode();
+        switch (hit.kind) {
+            case 'local-c-handle':
+                interaction = {
+                    kind: 'dragging-local-c-handle',
+                    index: hit.index,
+                };
+                onLocalCChange(hit.index, projectLocalC(mouse, hit.index));
+                render();
+                break;
             case 'control-point':
                 interaction = {
                     kind: 'dragging-control-point',
@@ -79,12 +139,22 @@ export function setupInteraction(canvas, state, render, onStartValueSelect) {
                 };
                 break;
             case 'border':
-                interaction = {
-                    kind: 'rotating-triangle',
-                    startMouse: mouse,
-                    startAngle: state.angle,
-                    startPos: { ...state.position },
-                };
+                if (shapeMode === 'circle') {
+                    interaction = {
+                        kind: 'dragging-triangle',
+                        startMouse: mouse,
+                        startPos: { ...state.position },
+                        startControl: { ...state.controlPoint },
+                    };
+                }
+                else {
+                    interaction = {
+                        kind: 'rotating-triangle',
+                        startMouse: mouse,
+                        startAngle: state.angle,
+                        startPos: { ...state.position },
+                    };
+                }
                 break;
             case 'interior':
                 interaction = {
@@ -115,6 +185,9 @@ export function setupInteraction(canvas, state, render, onStartValueSelect) {
             updateCursor(mouse);
             return;
         }
+        if (interaction.kind === 'dragging-local-c-handle') {
+            onLocalCChange(interaction.index, projectLocalC(mouse, interaction.index));
+        }
         if (interaction.kind === 'dragging-triangle') {
             const dx = mouse.x - interaction.startMouse.x;
             const dy = mouse.y - interaction.startMouse.y;
@@ -122,9 +195,9 @@ export function setupInteraction(canvas, state, render, onStartValueSelect) {
                 x: interaction.startPos.x + dx,
                 y: interaction.startPos.y + dy,
             };
-            // Clamp centroid so origin stays inside the triangle
-            const valid = getValidRegion(state.angle);
-            const clamped = clampPointToTriangle(desiredPos, valid[0], valid[1], valid[2]);
+            const clamped = getShapeMode() === 'circle'
+                ? clampPointToCircle(desiredPos, { x: 0, y: 0 }, CIRCUMRADIUS)
+                : clampPointToTriangle(desiredPos, ...getValidRegion(state.angle));
             const clampDx = clamped.x - interaction.startPos.x;
             const clampDy = clamped.y - interaction.startPos.y;
             state.position = clamped;
@@ -140,9 +213,7 @@ export function setupInteraction(canvas, state, render, onStartValueSelect) {
             const dTheta = currAngleToCP - startAngleToCP;
             const newAngle = interaction.startAngle + dTheta;
             const newPos = rotatePoint(interaction.startPos, cp, dTheta);
-            // Only apply if origin stays inside the triangle
-            const valid = getValidRegion(newAngle);
-            if (pointInTriangle(newPos, valid[0], valid[1], valid[2])) {
+            if (getShapeMode() !== 'circle' && pointInTriangle(newPos, ...getValidRegion(newAngle))) {
                 state.angle = newAngle;
                 state.position = newPos;
             }

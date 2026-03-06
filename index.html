@@ -9,13 +9,27 @@
   <body>
     <div id="container">
       <div class="panel">
-        <div class="panel-title">C-triangle</div>
+        <div class="panel-title" id="shape-title">C-triangle</div>
+        <div id="shape-mode-row">
+          <button type="button" class="shape-button is-active" data-shape-mode="triangle">
+            Triangle
+          </button>
+          <button type="button" class="shape-button" data-shape-mode="local-c">
+            c<sub>i</sub>
+          </button>
+          <button type="button" class="shape-button" data-shape-mode="circle">
+            Circle
+          </button>
+        </div>
         <canvas id="canvas" width="600" height="600"></canvas>
         <div class="readout" id="gamma-values">
           γ = (0.000, 0.000, 0.000, 0.000, 0.000, 0.000)
         </div>
-        <div class="readout" id="local-c-values">
+        <div class="readout" id="local-c-bounds">
           1 - γ = (1.000, 1.000, 1.000, 1.000, 1.000, 1.000)
+        </div>
+        <div class="readout" id="local-c-values">
+          c = (1.000, 1.000, 1.000, 1.000, 1.000, 1.000)
         </div>
       </div>
       <div id="region-panel" class="panel">
@@ -27,14 +41,16 @@
             G = g<sub>c5</sub> &#8728; ... &#8728; g<sub>c0</sub>
           </button>
         </div>
-        <div id="local-c-mode-row">
-          <button type="button" class="local-c-button is-active" data-local-c-mode="complement">
-            c<sub>i</sub> = 1 - &gamma;<sub>i</sub>
-          </button>
-          <button type="button" class="local-c-button" data-local-c-mode="capped">
-            c<sub>i</sub> = min(1/2, 1 - &gamma;<sub>i</sub>)
-          </button>
-        </div>
+        <details id="admissible-editor-panel">
+          <summary>Admissible Set Function</summary>
+          <div class="editor-note">Assume clamped inputs with a &le; b. Return a boolean.</div>
+          <textarea id="admissible-editor" spellcheck="false"></textarea>
+          <div id="admissible-editor-row">
+            <div id="admissible-status">Default ordered predicate active.</div>
+            <button type="button" id="admissible-reset">Reset</button>
+          </div>
+        </details>
+        <div id="ci-sliders"></div>
         <div id="slider-row">
           <label for="c-slider">c = <span id="c-value">0.50</span></label>
           <input type="range" id="c-slider" min="0" max="1" step="0.01" value="0.50" />
