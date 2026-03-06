@@ -8,11 +8,27 @@
   </head>
   <body>
     <div id="container">
-      <canvas id="canvas" width="600" height="600"></canvas>
-      <div id="region-panel">
+      <div class="panel">
+        <div class="panel-title">C-triangle</div>
+        <canvas id="canvas" width="600" height="600"></canvas>
+        <div class="readout" id="gamma-values">
+          γ = (0.000, 0.000, 0.000, 0.000, 0.000, 0.000)
+        </div>
+        <div class="readout" id="local-c-values">
+          1 - γ = (1.000, 1.000, 1.000, 1.000, 1.000, 1.000)
+        </div>
+      </div>
+      <div id="region-panel" class="panel">
+        <div class="panel-title">Map Graph</div>
         <canvas id="region-canvas" width="600" height="600"></canvas>
+        <div id="mode-row">
+          <button type="button" class="mode-button is-active" data-mode="single">g<sub>c</sub></button>
+          <button type="button" class="mode-button" data-mode="composition">
+            G = g<sub>&gamma;5</sub> &#8728; ... &#8728; g<sub>&gamma;0</sub>
+          </button>
+        </div>
         <div id="slider-row">
-          <label for="c-slider">c&nbsp;=&nbsp;<span id="c-value">0.50</span></label>
+          <label for="c-slider">c = <span id="c-value">0.50</span></label>
           <input type="range" id="c-slider" min="0" max="1" step="0.01" value="0.50" />
         </div>
       </div>

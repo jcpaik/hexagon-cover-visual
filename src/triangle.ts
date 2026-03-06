@@ -1,5 +1,7 @@
 import type { Point, TriangleState } from './types';
 import { mathToCanvas } from './coords';
+import { rayPolygonExitDistance } from './geometry';
+import { HEXAGON_VERTICES } from './hexagon';
 
 const CIRCUMRADIUS = 1 / Math.sqrt(3);
 const LIGHT_BLUE = '#89CFF0';
@@ -54,4 +56,14 @@ export function drawControlPoint(ctx: CanvasRenderingContext2D, state: TriangleS
   ctx.strokeStyle = '#999';
   ctx.lineWidth = 1;
   ctx.stroke();
+}
+
+export function getInnerGammas(state: TriangleState): number[] {
+  const verts = getVertices(state);
+  const origin = { x: 0, y: 0 };
+
+  return HEXAGON_VERTICES.map((vertex) => {
+    const distance = rayPolygonExitDistance(origin, vertex, verts);
+    return distance ?? 0;
+  });
 }

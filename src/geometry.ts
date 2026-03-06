@@ -77,3 +77,45 @@ export function clampPointToTriangle(p: Point, v0: Point, v1: Point, v2: Point):
   }
   return best;
 }
+
+export function cross(a: Point, b: Point): number {
+  return a.x * b.y - a.y * b.x;
+}
+
+export function raySegmentIntersectionDistance(
+  origin: Point,
+  direction: Point,
+  a: Point,
+  b: Point,
+): number | null {
+  const dirLength = distance(direction, { x: 0, y: 0 });
+  if (dirLength === 0) return null;
+
+  const dir = { x: direction.x / dirLength, y: direction.y / dirLength };
+  const edge = subtract(b, a);
+  const offset = subtract(a, origin);
+  const denom = cross(dir, edge);
+  const EPS = 1e-9;
+
+  if (Math.abs(denom) < EPS) return null;
+
+  const rayT = cross(offset, edge) / denom;
+  const segT = cross(offset, dir) / denom;
+
+  if (rayT < -EPS || segT < -EPS || segT > 1 + EPS) return null;
+
+  return Math.max(rayT, 0);
+}
+
+export function rayPolygonExitDistance(origin: Point, direction: Point, polygon: Point[]): number | null {
+  let best: number | null = null;
+
+  for (let i = 0; i < polygon.length; i++) {
+    const next = (i + 1) % polygon.length;
+    const hit = raySegmentIntersectionDistance(origin, direction, polygon[i], polygon[next]);
+    if (hit === null) continue;
+    if (best === null || hit < best) best = hit;
+  }
+
+  return best;
+}

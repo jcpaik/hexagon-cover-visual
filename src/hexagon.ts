@@ -3,6 +3,7 @@ import { mathToCanvas } from './coords';
 
 const S = Math.sqrt(3) / 2;
 
+// Ordered as V_0, ..., V_5 with V_0 = (1, 0), counterclockwise.
 export const HEXAGON_VERTICES: Point[] = [
   { x: 1, y: 0 },
   { x: 0.5, y: S },

@@ -20,10 +20,16 @@ body {
   align-items: start;
 }
 
-#region-panel {
+.panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.panel-title {
+  font-family: monospace;
+  font-size: 14px;
+  color: #444;
 }
 
 canvas {
@@ -39,6 +45,38 @@ canvas {
   font-size: 14px;
 }
 
+#mode-row {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-button {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  font-family: monospace;
+  font-size: 13px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.mode-button.is-active {
+  border-color: #475569;
+  background: #e2e8f0;
+}
+
 #slider-row input[type="range"] {
   flex: 1;
+}
+
+#slider-row.is-disabled {
+  opacity: 0.45;
+}
+
+.readout {
+  max-width: 600px;
+  font-family: monospace;
+  font-size: 13px;
+  color: #444;
+  line-height: 1.4;
 }

@@ -1,15 +1,26 @@
 import type { Point, TriangleState, InteractionState } from './types';
 import { canvasToMath, scaleToMath } from './coords';
-import { distance, distanceToTriangleBorder, pointInTriangle, rotatePoint, clampPointToTriangle } from './geometry';
+import {
+  closestPointOnSegment,
+  clampPointToTriangle,
+  distance,
+  distanceToSegment,
+  distanceToTriangleBorder,
+  pointInTriangle,
+  rotatePoint,
+} from './geometry';
+import { HEXAGON_VERTICES } from './hexagon';
 import { getVertices, getValidRegion } from './triangle';
 
 const CONTROL_POINT_HIT_PX = 8;
 const BORDER_HIT_PX = 6;
+const START_EDGE_HIT_PX = 8;
 
 export function setupInteraction(
   canvas: HTMLCanvasElement,
   state: TriangleState,
   render: () => void,
+  onStartValueSelect?: (value: number) => void,
 ): void {
   let interaction: InteractionState = { kind: 'idle' };
 
@@ -34,13 +45,35 @@ export function setupInteraction(
     return 'none';
   }
 
+  function getStartValueFromMouse(mouse: Point): number | null {
+    if (!onStartValueSelect) return null;
+
+    const start = HEXAGON_VERTICES[5];
+    const end = HEXAGON_VERTICES[0];
+    const hitDistance = distanceToSegment(mouse, start, end);
+    if (hitDistance > scaleToMath(START_EDGE_HIT_PX)) return null;
+
+    const closest = closestPointOnSegment(mouse, start, end);
+    const edge = {
+      x: start.x - end.x,
+      y: start.y - end.y,
+    };
+    const edgeLen2 = edge.x * edge.x + edge.y * edge.y;
+    if (edgeLen2 === 0) return null;
+
+    const dx = closest.x - end.x;
+    const dy = closest.y - end.y;
+    return Math.max(0, Math.min(1, (dx * edge.x + dy * edge.y) / edgeLen2));
+  }
+
   function updateCursor(mouse: Point): void {
     const hit = hitTest(mouse);
     switch (hit) {
       case 'control-point': canvas.style.cursor = 'pointer'; break;
       case 'border': canvas.style.cursor = 'alias'; break;
       case 'interior': canvas.style.cursor = 'move'; break;
-      default: canvas.style.cursor = 'default';
+      default:
+        canvas.style.cursor = getStartValueFromMouse(mouse) === null ? 'default' : 'pointer';
     }
   }
 
@@ -73,6 +106,13 @@ export function setupInteraction(
         };
         break;
       default:
+        {
+          const startValue = getStartValueFromMouse(mouse);
+          if (startValue !== null) {
+            onStartValueSelect?.(startValue);
+            render();
+          }
+        }
         return;
     }
 
