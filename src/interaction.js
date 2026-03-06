@@ -26,6 +26,21 @@ export function setupInteraction(canvas, state, render, onStartValueSelect) {
             return 'interior';
         return 'none';
     }
+    function projectStartValue(mouse) {
+        const start = HEXAGON_VERTICES[5];
+        const end = HEXAGON_VERTICES[0];
+        const closest = closestPointOnSegment(mouse, start, end);
+        const edge = {
+            x: start.x - end.x,
+            y: start.y - end.y,
+        };
+        const edgeLen2 = edge.x * edge.x + edge.y * edge.y;
+        if (edgeLen2 === 0)
+            return 0;
+        const dx = closest.x - end.x;
+        const dy = closest.y - end.y;
+        return Math.max(0, Math.min(1, (dx * edge.x + dy * edge.y) / edgeLen2));
+    }
     function getStartValueFromMouse(mouse) {
         if (!onStartValueSelect)
             return null;
@@ -34,17 +49,7 @@ export function setupInteraction(canvas, state, render, onStartValueSelect) {
         const hitDistance = distanceToSegment(mouse, start, end);
         if (hitDistance > scaleToMath(START_EDGE_HIT_PX))
             return null;
-        const closest = closestPointOnSegment(mouse, start, end);
-        const edge = {
-            x: start.x - end.x,
-            y: start.y - end.y,
-        };
-        const edgeLen2 = edge.x * edge.x + edge.y * edge.y;
-        if (edgeLen2 === 0)
-            return null;
-        const dx = closest.x - end.x;
-        const dy = closest.y - end.y;
-        return Math.max(0, Math.min(1, (dx * edge.x + dy * edge.y) / edgeLen2));
+        return projectStartValue(mouse);
     }
     function updateCursor(mouse) {
         const hit = hitTest(mouse);
@@ -93,8 +98,10 @@ export function setupInteraction(canvas, state, render, onStartValueSelect) {
                 {
                     const startValue = getStartValueFromMouse(mouse);
                     if (startValue !== null) {
+                        interaction = { kind: 'dragging-start-value' };
                         onStartValueSelect?.(startValue);
                         render();
+                        break;
                     }
                 }
                 return;
@@ -147,6 +154,9 @@ export function setupInteraction(canvas, state, render, onStartValueSelect) {
                 x: interaction.startControl.x + dx,
                 y: interaction.startControl.y + dy,
             };
+        }
+        if (interaction.kind === 'dragging-start-value') {
+            onStartValueSelect?.(projectStartValue(mouse));
         }
         render();
     }

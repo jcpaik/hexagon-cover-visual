@@ -1,4 +1,4 @@
-import { composeGammas, gAtGamma } from './maps';
+import { composeGammas, gAtLocalC } from './maps';
 
 const CSS_SIZE = 600;
 const PADDING = 48;
@@ -9,6 +9,9 @@ const SINGLE_GRAPH_COLOR = '#2563eb';
 const COMPOSITION_COLOR = '#b45309';
 const POINT_COLOR = '#dc2626';
 const TEXT_COLOR = '#334155';
+const GRAPH_FLATNESS_PX = 0.75;
+const MAX_GRAPH_DEPTH = 14;
+const MIN_GRAPH_SPAN = 1 / 4096;
 
 export type GraphMode = 'single' | 'composition';
 
@@ -22,6 +25,11 @@ export interface RegionRenderer {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+interface GraphPoint {
+  x: number;
+  y: number;
 }
 
 export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer {
@@ -49,6 +57,24 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
       x: PADDING + clamp01(x) * plotSize,
       y: CSS_SIZE - PADDING - clamp01(y) * plotSize,
     };
+  }
+
+  function distanceToSegment(
+    point: { x: number; y: number },
+    start: { x: number; y: number },
+    end: { x: number; y: number },
+  ): number {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) {
+      return Math.hypot(point.x - start.x, point.y - start.y);
+    }
+
+    const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / len2));
+    const projX = start.x + t * dx;
+    const projY = start.y + t * dy;
+    return Math.hypot(point.x - projX, point.y - projY);
   }
 
   function drawFrame(): void {
@@ -95,19 +121,60 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
 
   function evaluate(x: number): number {
     if (mode === 'single') {
-      return gAtGamma(singleParameter, x);
+      return gAtLocalC(singleParameter, x);
     }
     return composeGammas(gammas, x);
   }
 
+  function sampleGraphPoints(): GraphPoint[] {
+    const start: GraphPoint = { x: 0, y: evaluate(0) };
+    const end: GraphPoint = { x: 1, y: evaluate(1) };
+    const output: GraphPoint[] = [start];
+
+    function subdivide(left: GraphPoint, right: GraphPoint, depth: number): void {
+      const span = right.x - left.x;
+      if (depth >= MAX_GRAPH_DEPTH || span <= MIN_GRAPH_SPAN) {
+        output.push(right);
+        return;
+      }
+
+      const leftCanvas = toCanvas(left.x, left.y);
+      const rightCanvas = toCanvas(right.x, right.y);
+      const testFractions = [0.25, 0.5, 0.75];
+      let worstDeviation = 0;
+      let splitPoint: GraphPoint | null = null;
+
+      for (const fraction of testFractions) {
+        const x = left.x + span * fraction;
+        const point: GraphPoint = { x, y: evaluate(x) };
+        const canvasPoint = toCanvas(point.x, point.y);
+        const deviation = distanceToSegment(canvasPoint, leftCanvas, rightCanvas);
+
+        if (deviation > worstDeviation) {
+          worstDeviation = deviation;
+          splitPoint = point;
+        }
+      }
+
+      if (worstDeviation <= GRAPH_FLATNESS_PX || splitPoint === null) {
+        output.push(right);
+        return;
+      }
+
+      subdivide(left, splitPoint, depth + 1);
+      subdivide(splitPoint, right, depth + 1);
+    }
+
+    subdivide(start, end, 0);
+    return output;
+  }
+
   function drawGraph(): void {
-    const samples = 480;
+    const points = sampleGraphPoints();
     ctx.beginPath();
 
-    for (let i = 0; i <= samples; i++) {
-      const x = i / samples;
-      const y = evaluate(x);
-      const point = toCanvas(x, y);
+    for (let i = 0; i < points.length; i++) {
+      const point = toCanvas(points[i].x, points[i].y);
       if (i === 0) {
         ctx.moveTo(point.x, point.y);
       } else {
@@ -156,8 +223,8 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
     ctx.fillText('y', PADDING - 4, PADDING - 12);
 
     const title = mode === 'single'
-      ? 'g_c = f_(1-c)'
-      : 'G = g_gamma5 o ... o g_gamma0';
+      ? 'g_c'
+      : 'G = g_(1-gamma5) o ... o g_(1-gamma0)';
     ctx.fillText(title, PADDING, CSS_SIZE - 16);
   }
 

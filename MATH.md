@@ -69,7 +69,7 @@ There is one typo-level inconsistency in the informal description that should be
 - the phrase "the intersection of the boundary of the V-triangle and the line segment from `(0,0)` to $V_i$" cannot be right if the blue triangle in the app is meant to determine the inner gamma;
 - the quantity `\gamma_i` must be read from the **C-triangle** `T_C`, not from the $V_i$-triangle.
 
-That is the convention used in this note and in the UI.
+That is the convention used in this note and in the UI. No further reparameterization of `g` is needed in the writeup: the one-variable maps will be denoted only by $g_c$, where the subscript is always the local admissible coordinate $c$.
 
 ## 4. Local coordinates for a $V_i$-triangle
 
@@ -93,9 +93,21 @@ So `(a,b,c)` is a purely local description of how a unit equilateral triangle si
 
 ## 5. The admissible set
 
-The **admissible set** `\mathcal A \subset [0,1]^3` is the set of all triples `(a,b,c)` that can occur in the local picture above. It is given as the union of six closed semialgebraic cells.
+The **admissible set** `\mathcal A \subset [0,1]^3` is the set of all triples `(a,b,c)` that can occur in the local picture above.
 
-### Cell 1
+It is symmetric under interchange of the two boundary-edge coordinates:
+\[
+(a,b,c) \in \mathcal A \iff (b,a,c) \in \mathcal A.
+\]
+So it is enough to describe the ordered half
+\[
+a \le b.
+\]
+The full admissible set is then recovered by symmetry, i.e. by swapping `a` and `b` when `a>b`.
+
+In the ordered half `a \le b`, the admissible set is the union of the following three closed semialgebraic cells.
+
+### Ordered Cell 1
 \[
 a \le b
 \]
@@ -112,7 +124,7 @@ a^2+ab+b^2 \le 1
 c^4-c^2+ac-a^2 \le 0
 \]
 
-### Cell 2
+### Ordered Cell 2
 \[
 a \le b
 \]
@@ -129,7 +141,7 @@ a^2+ab+b^2 \le 1
 ((a+b)^2-1)c^2 + bc - b^2 \le 0
 \]
 
-### Cell 3
+### Ordered Cell 3
 \[
 a \le b
 \]
@@ -146,58 +158,12 @@ a^2+ab+b^2 \le 1
 c \le \tfrac12
 \]
 
-### Cell 4
+Equivalently, the other three cells are obtained from these three by applying the symmetry
 \[
-b \le a
-\]
-\[
-a+b \le 1
-\]
-\[
-a^2+ab+b^2 \le 1
-\]
-\[
-(a+b)^4-(a+b)^2+ab \le 0
-\]
-\[
-c^4-c^2+bc-b^2 \le 0
+(a,b,c) \longmapsto (b,a,c).
 \]
 
-### Cell 5
-\[
-b \le a
-\]
-\[
-a+b \le 1
-\]
-\[
-a^2+ab+b^2 \le 1
-\]
-\[
-(a+b)^4-(a+b)^2+ab \ge 0
-\]
-\[
-((a+b)^2-1)c^2 + ac - a^2 \le 0
-\]
-
-### Cell 6
-\[
-b \le a
-\]
-\[
-a+b \ge 1
-\]
-\[
-a^2+ab+b^2 \le 1
-\]
-\[
-(b^2-1)c^2 + (2ba^2+a)c + (a^4-a^2) \le 0
-\]
-\[
-c \le \tfrac12
-\]
-
-The six-cell decomposition reflects two symmetries and two regime changes:
+So the decomposition is governed by one symmetry and two regime changes:
 
 - the symmetry `a \leftrightarrow b`, corresponding to swapping clockwise and counterclockwise edges;
 - the transition across `a+b=1`;
@@ -210,22 +176,25 @@ The six-cell decomposition reflects two symmetries and two regime changes:
 
 This is the main notational point.
 
-The inner gamma `\gamma_i` is measured from `O` outward along `[O,V_i]`. By contrast, the admissible-set coordinate `c` is measured from $V_i$ inward along `[V_i,O]`.
+The inner gamma $\gamma_i$ is measured from $O$ outward along $[O,V_i]$. By contrast, the admissible-set coordinate $c$ is measured from $V_i$ inward along $[V_i,O]$.
 
-Therefore the two quantities are complementary:
+Geometrically, the portion of the diagonal not already covered by the C-triangle has length
 \[
-c_i = 1 - \gamma_i.
+1 - \gamma_i.
 \]
 
-So if `T_C` contributes the inner-gamma value `\gamma_i` on the diagonal `[O,V_i]`, then the corresponding local admissible slice for the $V_i$-triangle is obtained by setting
+For the contradiction argument, one does not need to identify the local parameter with this full complementary length. It is enough to choose a local parameter $c_i$ for the $V_i$-triangle such that
 \[
-c = c_i = 1-\gamma_i.
+c_i \le 1-\gamma_i.
 \]
 
-This is the convention the app now displays explicitly:
+In other words, the quantity $1-\gamma_i$ is an upper bound on the local admissible slice parameter needed in the propagation argument.
 
-- the left panel shows the six values `\gamma_0,\dots,\gamma_5` read from the blue C-triangle;
-- the right panel studies the one-variable maps `g_c = f_{1-c}` and the full composition built from the current inner gamma data.
+This is the convention the app displays explicitly:
+
+- the left panel shows the six values $\gamma_0,\dots,\gamma_5$ read from the blue C-triangle;
+- the left panel also shows the six complementary quantities $1-\gamma_0,\dots,1-\gamma_5$;
+- the right panel studies the one-variable maps $g_c$ and the full composition obtained from local parameters satisfying $c_i \le 1-\gamma_i$.
 
 ## 7. From the admissible set to a one-variable map
 
@@ -237,48 +206,42 @@ whenever the slice is nonempty.
 
 Then define the induced map
 \[
-f_c(a) := 1 - B_c(a).
+g_c(a) := 1 - B_c(a).
 \]
 
 Interpretation:
 
 - `a` is the uncovered amount arriving at $V_i$ from the previous edge,
 - `B_c(a)` is the largest amount the $V_i$-triangle can cover on the next edge while still respecting the diagonal parameter `c`,
-- `f_c(a)=1-B_c(a)` is the uncovered amount passed on to the next vertex.
+- `g_c(a)=1-B_c(a)` is the uncovered amount passed on to the next vertex.
 
-So `f_c` is the local "defect propagation" map.
+This is the same one-variable object that was previously denoted $f_c$ in the informal description. In the current note and UI, the preferred notation is $g_c$.
 
 ## 8. The six-step composition around the hexagon
 
 Let `x_0 \in [0,1]` be the uncovered amount on the edge `[V_5,V_0]` adjacent to $V_0$. After the $V_0$-triangle acts, the uncovered amount handed to the next edge is
 \[
-x_1 = f_{c_0}(x_0).
+x_1 = g_{c_0}(x_0).
 \]
 Continuing cyclically gives
 \[
-x_{i+1} = f_{c_i}(x_i), \qquad i=0,1,\dots,5,
+x_{i+1} = g_{c_i}(x_i), \qquad i=0,1,\dots,5,
 \]
 with indices taken mod `6`.
 
 Hence after one full turn,
 \[
-x_6 = (f_{c_5} \circ f_{c_4} \circ \cdots \circ f_{c_0})(x_0).
+x_6 = (g_{c_5} \circ g_{c_4} \circ \cdots \circ g_{c_0})(x_0).
 \]
-Using the relation `c_i = 1-\gamma_i`, this becomes
+For the covering argument, the parameters are constrained only by
 \[
-x_6 = (f_{1-\gamma_5} \circ f_{1-\gamma_4} \circ \cdots \circ f_{1-\gamma_0})(x_0).
+c_i \le 1-\gamma_i, \qquad i=0,\dots,5.
 \]
-
-If one prefers to parameterize the one-variable maps directly by inner gamma rather than by the complementary local coordinate, define
+So one keeps the composition in the local-coordinate notation
 \[
-g_\gamma := f_{1-\gamma}.
+x_6 = (g_{c_5} \circ g_{c_4} \circ \cdots \circ g_{c_0})(x_0),
 \]
-Then the recurrence is simply
-\[
-x_6 = (g_{\gamma_5} \circ g_{\gamma_4} \circ \cdots \circ g_{\gamma_0})(x_0).
-\]
-
-This is the clean way to reconcile the composition formula with the geometric definition of `\gamma_i`.
+with the understanding that each $c_i$ is bounded above by $1-\gamma_i$.
 
 ## 9. The contradiction template
 
@@ -288,13 +251,11 @@ x_0 \ge x_6.
 \]
 With the notation above, that means
 \[
-x \ge (f_{1-\gamma_5} \circ f_{1-\gamma_4} \circ \cdots \circ f_{1-\gamma_0})(x)
+x \ge (g_{c_5} \circ g_{c_4} \circ \cdots \circ g_{c_0})(x)
 \]
-for every relevant `x \in [0,1]` and every inner-gamma tuple produced by a valid C-triangle.
-
-Equivalently, in the `g_\gamma` notation,
+for every relevant $x \in [0,1]$, every inner-gamma tuple produced by a valid C-triangle, and every choice of local parameters satisfying
 \[
-x \ge (g_{\gamma_5} \circ g_{\gamma_4} \circ \cdots \circ g_{\gamma_0})(x).
+c_i \le 1-\gamma_i.
 \]
 
 So the global covering problem is reduced to a family of explicit one-dimensional inequalities built from admissible-set slices.
@@ -302,16 +263,20 @@ So the global covering problem is reduced to a family of explicit one-dimensiona
 ## 10. Dictionary between the math and the current app
 
 - **Blue triangle on the left**: the C-triangle `T_C`.
-- **Displayed tuple `γ`**: the six exit distances of `T_C` along the rays `[O,V_i]`.
-- **Displayed tuple `1-γ`**: the six local diagonal parameters relevant for the six $V_i$-triangles.
-- **Slider on the right**: a single-parameter graph of `g_c`; to study a specific vertex $V_i$, use `c = \gamma_i`.
-- **Composition mode on the right**: the graph of `g_{\gamma_5} \circ \cdots \circ g_{\gamma_0}` for the current blue C-triangle.
+- **Displayed tuple `γ`**: the six exit distances of `T_C` along the rays $[O,V_i]$.
+- **Displayed tuple `1-γ`**: six upper bounds for the local diagonal parameters $c_i$ relevant for the six $V_i$-triangles.
+- **Slider on the right**: a single-parameter graph of $g_c$, where $c$ is the local admissible slice parameter.
+- **Composition mode on the right**: the graph of
+  \[
+  x \longmapsto (g_{c_5} \circ \cdots \circ g_{c_0})(x),
+  \]
+  where in the proof one only uses the bounds $c_i \le 1-\gamma_i$.
 
 ## 11. What remains to prove mathematically
 
 To finish the contradiction argument, one still needs a rigorous statement of the form:
 
-1. every hypothetical 7-cover produces an inner-gamma tuple `\gamma(T_C)` and hence six local parameters `c_i = 1-\gamma_i`;
+1. every hypothetical 7-cover produces an inner-gamma tuple $\gamma(T_C)$ and hence six local parameters $c_i$ with $c_i \le 1-\gamma_i$;
 2. each $V_i$-triangle yields an admissible triple `(a_i,b_i,c_i)`;
 3. the resulting composition map cannot satisfy the required cyclic inequality.
 
