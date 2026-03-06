@@ -7,7 +7,16 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <canvas id="canvas" width="600" height="600"></canvas>
+    <div id="container">
+      <canvas id="canvas" width="600" height="600"></canvas>
+      <div id="region-panel">
+        <canvas id="region-canvas" width="600" height="600"></canvas>
+        <div id="slider-row">
+          <label for="c-slider">c&nbsp;=&nbsp;<span id="c-value">0.50</span></label>
+          <input type="range" id="c-slider" min="0" max="1" step="0.01" value="0.50" />
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
