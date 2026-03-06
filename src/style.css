@@ -50,7 +50,8 @@ canvas {
   gap: 8px;
 }
 
-.mode-button {
+.mode-button,
+.local-c-button {
   border: 1px solid #cbd5e1;
   background: #f8fafc;
   color: #334155;
@@ -60,9 +61,19 @@ canvas {
   cursor: pointer;
 }
 
-.mode-button.is-active {
+.mode-button.is-active,
+.local-c-button.is-active {
   border-color: #475569;
   background: #e2e8f0;
+}
+
+#local-c-mode-row {
+  display: flex;
+  gap: 8px;
+}
+
+.local-c-button {
+  font-size: 12px;
 }
 
 #slider-row input[type="range"] {

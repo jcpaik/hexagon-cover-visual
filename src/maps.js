@@ -21,15 +21,14 @@ function admissibleOrdered(aInput, bInput, localCInput) {
         return false;
     }
     const transition = sum ** 4 - sum * sum + a * b;
-    const cell1 = sum <= 1 + EPS &&
-        transition <= EPS &&
-        c ** 4 - c * c + a * c - a * a <= EPS;
+    const cell1 = sum <= 1 + EPS && transition <= EPS; // &&
+    // c ** 4 - c * c + a * c - a * a <= EPS;
     const cell2 = sum <= 1 + EPS &&
         transition >= -EPS &&
-        ((sum * sum - 1) * c * c) + b * c - b * b <= EPS;
+        (sum * sum - 1) * c * c + b * c - b * b <= EPS;
     const cell3 = sum >= 1 - EPS &&
         c <= 0.5 + EPS &&
-        ((a * a - 1) * c * c) + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= EPS;
+        (a * a - 1) * c * c + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= EPS;
     return cell1 || cell2 || cell3;
 }
 export function admissible(aInput, bInput, localCInput) {
@@ -94,11 +93,18 @@ export function composeGammas(gammas, startInput) {
     }
     return current;
 }
-export function computeChainValues(gammas, startInput) {
+export function composeLocalCs(localCs, startInput) {
+    let current = clamp01(startInput);
+    for (const localC of localCs) {
+        current = gAtLocalC(localC, current);
+    }
+    return current;
+}
+export function computeChainValuesForLocalCs(localCs, startInput) {
     const values = [clamp01(startInput)];
     let current = values[0];
-    for (const gamma of gammas) {
-        current = gAtGamma(gamma, current);
+    for (const localC of localCs) {
+        current = gAtLocalC(localC, current);
         values.push(current);
     }
     return values;

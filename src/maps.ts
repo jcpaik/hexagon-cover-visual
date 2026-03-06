@@ -33,10 +33,7 @@ function admissibleOrdered(
   const transition = sum ** 4 - sum * sum + a * b;
   const cell1 = sum <= 1 + EPS && transition <= EPS; // &&
   // c ** 4 - c * c + a * c - a * a <= EPS;
-  const cell2 =
-    sum <= 1 + EPS &&
-    transition >= -EPS &&
-    (sum * sum - 1) * c * c + b * c - b * b <= EPS;
+  const cell2 = sum <= 1 + EPS && transition >= -EPS; // && (sum * sum - 1) * c * c + b * c - b * b <= EPS;
   const cell3 =
     sum >= 1 - EPS &&
     c <= 0.5 + EPS &&
@@ -129,15 +126,25 @@ export function composeGammas(gammas: number[], startInput: number): number {
   return current;
 }
 
-export function computeChainValues(
-  gammas: number[],
+export function composeLocalCs(localCs: number[], startInput: number): number {
+  let current = clamp01(startInput);
+
+  for (const localC of localCs) {
+    current = gAtLocalC(localC, current);
+  }
+
+  return current;
+}
+
+export function computeChainValuesForLocalCs(
+  localCs: number[],
   startInput: number,
 ): number[] {
   const values = [clamp01(startInput)];
   let current = values[0];
 
-  for (const gamma of gammas) {
-    current = gAtGamma(gamma, current);
+  for (const localC of localCs) {
+    current = gAtLocalC(localC, current);
     values.push(current);
   }
 

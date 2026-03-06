@@ -2,7 +2,7 @@ import './style.css';
 import type { TriangleState } from './types';
 import { config, mathToCanvas } from './coords';
 import { drawHexagon, HEXAGON_VERTICES } from './hexagon';
-import { computeChainValues } from './maps';
+import { computeChainValuesForLocalCs } from './maps';
 import { drawTriangle, drawControlPoint, getInnerGammas } from './triangle';
 import { setupInteraction } from './interaction';
 import { createRegionRenderer, type GraphMode } from './region';
@@ -27,6 +27,7 @@ const cSlider = document.getElementById('c-slider') as HTMLInputElement;
 const cValueLabel = document.getElementById('c-value') as HTMLSpanElement;
 const sliderRow = document.getElementById('slider-row') as HTMLDivElement;
 const modeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.mode-button'));
+const localCButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.local-c-button'));
 
 const triangleState: TriangleState = {
   position: { x: 0, y: 0 },
@@ -35,6 +36,8 @@ const triangleState: TriangleState = {
 };
 let startValue = 0.25;
 let graphMode: GraphMode = 'single';
+type LocalCMode = 'complement' | 'capped';
+let localCMode: LocalCMode = 'complement';
 
 function formatTuple(values: number[]): string {
   return `(${values.map((value) => value.toFixed(3)).join(', ')})`;
@@ -76,8 +79,24 @@ function syncModeButtons(): void {
   for (const button of modeButtons) {
     button.classList.toggle('is-active', button.dataset.mode === graphMode);
   }
+  for (const button of localCButtons) {
+    button.classList.toggle('is-active', button.dataset.localCMode === localCMode);
+  }
   sliderRow.classList.toggle('is-disabled', graphMode !== 'single');
   cSlider.disabled = graphMode !== 'single';
+}
+
+function computeLocalCs(gammas: number[]): number[] {
+  if (localCMode === 'capped') {
+    return gammas.map((gamma) => Math.min(0.5, 1 - gamma));
+  }
+  return gammas.map((gamma) => 1 - gamma);
+}
+
+function localCLabel(): string {
+  return localCMode === 'capped'
+    ? 'c = min(1/2, 1 - γ)'
+    : 'c = 1 - γ';
 }
 
 function render(): void {
@@ -87,15 +106,15 @@ function render(): void {
   drawControlPoint(ctx, triangleState);
 
   const gammas = getInnerGammas(triangleState);
-  const localCs = gammas.map((gamma) => 1 - gamma);
-  const chain = computeChainValues(gammas, startValue);
+  const localCs = computeLocalCs(gammas);
+  const chain = computeChainValuesForLocalCs(localCs, startValue);
   gammaValues.textContent = `γ = ${formatTuple(gammas)}`;
-  localCValues.textContent = `1 - γ = ${formatTuple(localCs)}`;
+  localCValues.textContent = `${localCLabel()} = ${formatTuple(localCs)}`;
   drawPropagationMarkers(ctx, chain);
 
   regionRenderer.setMode(graphMode);
   regionRenderer.setSingleParameter(parseFloat(cSlider.value));
-  regionRenderer.setGammas(gammas);
+  regionRenderer.setLocalCs(localCs);
   regionRenderer.setStartValue(startValue);
   regionRenderer.render();
 }
@@ -114,6 +133,16 @@ for (const button of modeButtons) {
     const mode = button.dataset.mode as GraphMode | undefined;
     if (!mode) return;
     graphMode = mode;
+    syncModeButtons();
+    render();
+  });
+}
+
+for (const button of localCButtons) {
+  button.addEventListener('click', () => {
+    const mode = button.dataset.localCMode as LocalCMode | undefined;
+    if (!mode) return;
+    localCMode = mode;
     syncModeButtons();
     render();
   });

@@ -1,4 +1,4 @@
-import { composeGammas, gAtLocalC } from './maps';
+import { composeLocalCs, gAtLocalC } from './maps';
 
 const CSS_SIZE = 600;
 const PADDING = 48;
@@ -19,7 +19,7 @@ export interface RegionRenderer {
   render(): void;
   setMode(mode: GraphMode): void;
   setSingleParameter(value: number): void;
-  setGammas(gammas: number[]): void;
+  setLocalCs(localCs: number[]): void;
   setStartValue(value: number): void;
 }
 
@@ -49,7 +49,7 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
   const plotSize = CSS_SIZE - 2 * PADDING;
   let mode: GraphMode = 'single';
   let singleParameter = 0.5;
-  let gammas = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
+  let localCs = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
   let startValue = 0.25;
 
   function toCanvas(x: number, y: number): { x: number; y: number } {
@@ -123,7 +123,7 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
     if (mode === 'single') {
       return gAtLocalC(singleParameter, x);
     }
-    return composeGammas(gammas, x);
+    return composeLocalCs(localCs, x);
   }
 
   function sampleGraphPoints(): GraphPoint[] {
@@ -224,7 +224,7 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
 
     const title = mode === 'single'
       ? 'g_c'
-      : 'G = g_(1-gamma5) o ... o g_(1-gamma0)';
+      : 'G = g_c5 o ... o g_c0';
     ctx.fillText(title, PADDING, CSS_SIZE - 16);
   }
 
@@ -241,8 +241,8 @@ export function createRegionRenderer(canvas: HTMLCanvasElement): RegionRenderer 
     setSingleParameter(value: number): void {
       singleParameter = clamp01(value);
     },
-    setGammas(nextGammas: number[]): void {
-      gammas = nextGammas.map(clamp01);
+    setLocalCs(nextLocalCs: number[]): void {
+      localCs = nextLocalCs.map(clamp01);
     },
     setStartValue(value: number): void {
       startValue = clamp01(value);
