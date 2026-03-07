@@ -157,6 +157,37 @@ export function composeLocalCs(localCs, startInput) {
     }
     return current;
 }
+export function composeTwoLocalCs(firstLocalCInput, secondLocalCInput, startInput) {
+    const start = clamp01(startInput);
+    const secondValue = gAtLocalC(secondLocalCInput, start);
+    return gAtLocalC(firstLocalCInput, secondValue);
+}
+export function experimentallyCheckComposePairDominatesIdentity(firstLocalCInput, secondLocalCInput, sampleCount = 512) {
+    const firstLocalC = clamp01(firstLocalCInput);
+    const secondLocalC = clamp01(secondLocalCInput);
+    const steps = Math.max(1, Math.floor(sampleCount));
+    const tolerance = 1e-6;
+    let witnessT = 0;
+    let minGap = Number.POSITIVE_INFINITY;
+    let passes = true;
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const value = composeTwoLocalCs(firstLocalC, secondLocalC, t);
+        const gap = value - t;
+        if (gap < minGap) {
+            minGap = gap;
+            witnessT = t;
+        }
+        if (gap < -tolerance) {
+            passes = false;
+        }
+    }
+    return {
+        passes,
+        witnessT,
+        minGap,
+    };
+}
 export function computeChainValuesForLocalCs(localCs, startInput) {
     const values = [clamp01(startInput)];
     let current = values[0];

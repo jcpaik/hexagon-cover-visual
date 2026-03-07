@@ -1,5 +1,5 @@
 import './style.css';
-import { config, mathToCanvas } from './coords';
+import { config, mathToCanvas, setCanvasSize } from './coords';
 import { drawHexagon, HEXAGON_VERTICES } from './hexagon';
 import { computeChainValuesForLocalCs, getAdmissibleOrderedSource, isCustomAdmissibleOrderedSourceActive, resetAdmissibleOrderedSource, setAdmissibleOrderedSource, } from './maps';
 import { drawControlPoint, drawShape, getInnerGammas } from './triangle';
@@ -7,13 +7,7 @@ import { setupInteraction } from './interaction';
 import { createRegionRenderer } from './region';
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-// HiDPI support for 2D canvas
-const dpr = window.devicePixelRatio || 1;
-canvas.width = config.canvasSize * dpr;
-canvas.height = config.canvasSize * dpr;
-canvas.style.width = config.canvasSize + 'px';
-canvas.style.height = config.canvasSize + 'px';
-ctx.scale(dpr, dpr);
+const MAX_CANVAS_SIZE = 600;
 // Graph canvas (right side)
 const regionCanvas = document.getElementById('region-canvas');
 const regionRenderer = createRegionRenderer(regionCanvas);
@@ -21,7 +15,6 @@ const shapeTitle = document.getElementById('shape-title');
 const gammaValues = document.getElementById('gamma-values');
 const localCBounds = document.getElementById('local-c-bounds');
 const localCValues = document.getElementById('local-c-values');
-const localCSliderContainer = document.getElementById('ci-sliders');
 const cSlider = document.getElementById('c-slider');
 const cValueLabel = document.getElementById('c-value');
 const sliderRow = document.getElementById('slider-row');
@@ -36,14 +29,27 @@ const triangleState = {
     controlPoint: { x: 0, y: 0 },
 };
 let startValue = 0.25;
-let graphMode = 'single';
+let graphMode = 'composition';
 let shapeMode = 'triangle';
 let currentGammas = Array(6).fill(0);
-let manualLocalCs = Array(6).fill(1);
-const localCSliderInputs = [];
-const localCSliderValueLabels = [];
-const localCSliderMaxLabels = [];
+let manualLocalCs = Array(6).fill(0.5);
 let admissibleEditorTimer = null;
+function getResponsiveCanvasSize(target) {
+    const rect = target.getBoundingClientRect();
+    return Math.max(1, Math.min(MAX_CANVAS_SIZE, Math.round(rect.width)));
+}
+function resizeHiDPICanvas(target, context, cssSize) {
+    const dpr = window.devicePixelRatio || 1;
+    target.width = Math.round(cssSize * dpr);
+    target.height = Math.round(cssSize * dpr);
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function syncCanvasSizes() {
+    const mainCanvasSize = getResponsiveCanvasSize(canvas);
+    setCanvasSize(mainCanvasSize);
+    resizeHiDPICanvas(canvas, ctx, mainCanvasSize);
+    regionRenderer.resize(getResponsiveCanvasSize(regionCanvas));
+}
 function formatTuple(values) {
     return `(${values.map((value) => value.toFixed(3)).join(', ')})`;
 }
@@ -90,15 +96,6 @@ function getLocalCMaxima(gammas) {
 }
 function clampToLocalCMax(value, maxValue) {
     return Math.max(0, Math.min(maxValue, value));
-}
-function updateLocalCSliders(maxima) {
-    for (let i = 0; i < 6; i++) {
-        const slider = localCSliderInputs[i];
-        slider.max = maxima[i].toFixed(6);
-        slider.value = clampToLocalCMax(manualLocalCs[i], maxima[i]).toFixed(6);
-        localCSliderValueLabels[i].textContent = `value ${manualLocalCs[i].toFixed(3)}`;
-        localCSliderMaxLabels[i].textContent = `max ${maxima[i].toFixed(3)}`;
-    }
 }
 function drawLocalCControls(ctx2d, gammas, currentLocalCs) {
     const handles = currentLocalCs.map((value, index) => localCPoint(index, value));
@@ -157,8 +154,7 @@ function syncModeButtons() {
     for (const button of modeButtons) {
         button.classList.toggle('is-active', button.dataset.mode === graphMode);
     }
-    localCSliderContainer.hidden = shapeMode !== 'local-c';
-    sliderRow.classList.toggle('is-disabled', graphMode !== 'single');
+    sliderRow.hidden = graphMode !== 'single';
     cSlider.disabled = graphMode !== 'single';
 }
 function setAdmissibleStatus(text, isError = false) {
@@ -178,39 +174,6 @@ function applyAdmissibleEditorSource() {
     }
     syncAdmissibleEditorStatus();
     render();
-}
-function initializeLocalCSliders() {
-    for (let i = 0; i < 6; i++) {
-        const row = document.createElement('div');
-        row.className = 'ci-slider-row';
-        const head = document.createElement('div');
-        head.className = 'ci-slider-head';
-        const name = document.createElement('span');
-        name.textContent = `c${i}`;
-        const value = document.createElement('span');
-        const max = document.createElement('span');
-        value.textContent = 'value 0.000';
-        max.textContent = 'max 0.000';
-        head.append(name, value, max);
-        const slider = document.createElement('input');
-        slider.type = 'range';
-        slider.id = `ci-slider-${i}`;
-        slider.min = '0';
-        slider.max = '1';
-        slider.step = '0.001';
-        slider.value = '0';
-        slider.addEventListener('input', () => {
-            const maxValue = getLocalCMaxima(currentGammas)[i];
-            const next = clampToLocalCMax(parseFloat(slider.value), maxValue);
-            manualLocalCs[i] = next;
-            render();
-        });
-        localCSliderInputs.push(slider);
-        localCSliderValueLabels.push(value);
-        localCSliderMaxLabels.push(max);
-        row.append(head, slider);
-        localCSliderContainer.append(row);
-    }
 }
 function render() {
     let gammas;
@@ -239,7 +202,6 @@ function render() {
         gammaValues.textContent = 'manual c_i mode';
         localCBounds.textContent = `max c = ${formatTuple(maxima)}`;
         localCValues.textContent = `c = ${formatTuple(localCs)}`;
-        updateLocalCSliders(maxima);
         drawLocalCControls(ctx, gammas, localCs);
     }
     else {
@@ -263,7 +225,6 @@ cSlider.addEventListener('input', () => {
 cValueLabel.textContent = parseFloat(cSlider.value).toFixed(2);
 admissibleEditor.value = getAdmissibleOrderedSource();
 syncAdmissibleEditorStatus();
-initializeLocalCSliders();
 admissibleEditor.addEventListener('input', () => {
     if (admissibleEditorTimer !== null) {
         window.clearTimeout(admissibleEditorTimer);
@@ -308,5 +269,10 @@ setupInteraction(canvas, triangleState, () => shapeMode, () => currentGammas, ()
 }, render, (value) => {
     startValue = value;
 });
+window.addEventListener('resize', () => {
+    syncCanvasSizes();
+    render();
+});
+syncCanvasSizes();
 syncModeButtons();
 render();

@@ -7,23 +7,32 @@
 body {
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
   min-height: 100vh;
+  padding: 24px 16px 40px;
   background: #fafafa;
   user-select: none;
   -webkit-user-select: none;
+  overflow-x: hidden;
 }
 
 #container {
   display: flex;
+  width: min(100%, 1240px);
   gap: 24px;
   align-items: start;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1 1 520px;
+  width: min(100%, 600px);
+  max-width: 600px;
+  min-width: 0;
 }
 
 .panel-title {
@@ -33,14 +42,22 @@ body {
 }
 
 canvas {
+  display: block;
+  width: 100%;
+  max-width: 600px;
+  height: auto;
+  aspect-ratio: 1;
   border: 1px solid #ccc;
   background: #fff;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #slider-row {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
   font-family: monospace;
   font-size: 14px;
 }
@@ -48,6 +65,7 @@ canvas {
 #mode-row {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 #admissible-editor-panel {
@@ -89,6 +107,7 @@ canvas {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
   margin-top: 8px;
 }
 
@@ -115,8 +134,10 @@ canvas {
   color: #334155;
   font-family: monospace;
   font-size: 13px;
-  padding: 6px 10px;
+  min-height: 40px;
+  padding: 8px 12px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .shape-button.is-active,
@@ -128,50 +149,42 @@ canvas {
 #shape-mode-row {
   display: flex;
   gap: 8px;
-}
-
-#ci-sliders {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.ci-slider-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid #fef3c7;
-  background: #fffbeb;
-}
-
-.ci-slider-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  font-family: monospace;
-  font-size: 12px;
-  color: #713f12;
-}
-
-.ci-slider-row input[type="range"] {
-  width: 100%;
-  accent-color: #eab308;
+  flex-wrap: wrap;
 }
 
 #slider-row input[type="range"] {
   flex: 1;
-}
-
-#slider-row.is-disabled {
-  opacity: 0.45;
+  min-width: 180px;
 }
 
 .readout {
-  max-width: 600px;
   font-family: monospace;
   font-size: 13px;
   color: #444;
   line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  body {
+    padding: 16px 12px 24px;
+  }
+
+  #container {
+    gap: 16px;
+  }
+
+  .panel {
+    flex-basis: 100%;
+  }
+
+  .shape-button,
+  .mode-button {
+    flex: 1 1 150px;
+  }
+
+  #slider-row input[type="range"] {
+    min-width: 0;
+    width: 100%;
+  }
 }

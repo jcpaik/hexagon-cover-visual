@@ -1,18 +1,32 @@
-import { canvasToMath, scaleToMath } from './coords';
+import { canvasToMath, config, scaleToMath } from './coords';
 import { closestPointOnSegment, clampPointToCircle, clampPointToTriangle, distance, distanceToCircleBorder, distanceToSegment, distanceToTriangleBorder, pointInCircle, pointInTriangle, rotatePoint, } from './geometry';
 import { HEXAGON_VERTICES } from './hexagon';
 import { CIRCUMRADIUS, getVertices, getValidRegion } from './triangle';
 const LOCAL_C_HIT_PX = 8;
+const LOCAL_C_RAY_HIT_PX = 10;
 const CONTROL_POINT_HIT_PX = 8;
 const BORDER_HIT_PX = 6;
 const START_EDGE_HIT_PX = 8;
+const PEN_HIT_SCALE = 1.35;
+const TOUCH_HIT_SCALE = 1.75;
 export function setupInteraction(canvas, state, getShapeMode, getGammas, getLocalCs, onLocalCChange, render, onStartValueSelect) {
     let interaction = { kind: 'idle' };
-    function getMouseMath(e) {
+    let activePointerId = null;
+    let activePointerType = 'mouse';
+    function getHitScale(pointerType) {
+        if (pointerType === 'touch')
+            return TOUCH_HIT_SCALE;
+        if (pointerType === 'pen')
+            return PEN_HIT_SCALE;
+        return 1;
+    }
+    function getPointerMath(e) {
         const rect = canvas.getBoundingClientRect();
+        const scaleX = rect.width > 0 ? config.canvasSize / rect.width : 1;
+        const scaleY = rect.height > 0 ? config.canvasSize / rect.height : 1;
         return canvasToMath({
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top,
+            x: (e.clientX - rect.left) * scaleX,
+            y: (e.clientY - rect.top) * scaleY,
         });
     }
     function localCPoint(index, localC) {
@@ -23,20 +37,41 @@ export function setupInteraction(canvas, state, getShapeMode, getGammas, getLoca
             y: vertex.y * radius,
         };
     }
-    function getLocalCHandleIndex(mouse) {
+    function getLocalCHandleIndex(mouse, pointerType) {
         if (getShapeMode() !== 'local-c') {
             return null;
         }
+        const maxDistance = scaleToMath(LOCAL_C_HIT_PX * getHitScale(pointerType));
         let bestIndex = null;
         let bestDistance = Infinity;
         const localCs = getLocalCs();
         for (let i = 0; i < localCs.length; i++) {
             const handle = localCPoint(i, localCs[i]);
             const handleDistance = distance(mouse, handle);
-            if (handleDistance > scaleToMath(LOCAL_C_HIT_PX) || handleDistance >= bestDistance) {
+            if (handleDistance > maxDistance || handleDistance >= bestDistance) {
                 continue;
             }
             bestDistance = handleDistance;
+            bestIndex = i;
+        }
+        return bestIndex;
+    }
+    function getLocalCRayIndex(mouse, pointerType) {
+        if (getShapeMode() !== 'local-c') {
+            return null;
+        }
+        const maxDistance = scaleToMath(LOCAL_C_RAY_HIT_PX * getHitScale(pointerType));
+        let bestIndex = null;
+        let bestDistance = Infinity;
+        for (let i = 0; i < 6; i++) {
+            const gamma = Math.max(0, Math.min(1, getGammas()[i] ?? 0));
+            const boundary = localCPoint(i, 1 - gamma);
+            const vertex = HEXAGON_VERTICES[i];
+            const rayDistance = distanceToSegment(mouse, boundary, vertex);
+            if (rayDistance > maxDistance || rayDistance >= bestDistance) {
+                continue;
+            }
+            bestDistance = rayDistance;
             bestIndex = i;
         }
         return bestIndex;
@@ -48,8 +83,9 @@ export function setupInteraction(canvas, state, getShapeMode, getGammas, getLoca
         const closest = closestPointOnSegment(mouse, boundary, vertex);
         return Math.max(0, Math.min(1 - gamma, distance(closest, vertex)));
     }
-    function hitTest(mouse) {
-        const localCHandleIndex = getLocalCHandleIndex(mouse);
+    function hitTest(mouse, pointerType) {
+        const hitScale = getHitScale(pointerType);
+        const localCHandleIndex = getLocalCHandleIndex(mouse, pointerType) ?? getLocalCRayIndex(mouse, pointerType);
         if (localCHandleIndex !== null) {
             return { kind: 'local-c-handle', index: localCHandleIndex };
         }
@@ -59,18 +95,18 @@ export function setupInteraction(canvas, state, getShapeMode, getGammas, getLoca
         }
         if (shapeMode === 'circle') {
             const borderDist = distanceToCircleBorder(mouse, state.position, CIRCUMRADIUS);
-            if (borderDist <= scaleToMath(BORDER_HIT_PX))
+            if (borderDist <= scaleToMath(BORDER_HIT_PX * hitScale))
                 return { kind: 'border' };
             if (pointInCircle(mouse, state.position, CIRCUMRADIUS))
                 return { kind: 'interior' };
             return { kind: 'none' };
         }
         const cpDist = distance(mouse, state.controlPoint);
-        if (cpDist <= scaleToMath(CONTROL_POINT_HIT_PX))
+        if (cpDist <= scaleToMath(CONTROL_POINT_HIT_PX * hitScale))
             return { kind: 'control-point' };
         const verts = getVertices(state);
         const borderDist = distanceToTriangleBorder(mouse, verts);
-        if (borderDist <= scaleToMath(BORDER_HIT_PX))
+        if (borderDist <= scaleToMath(BORDER_HIT_PX * hitScale))
             return { kind: 'border' };
         if (pointInTriangle(mouse, verts[0], verts[1], verts[2]))
             return { kind: 'interior' };
@@ -91,18 +127,21 @@ export function setupInteraction(canvas, state, getShapeMode, getGammas, getLoca
         const dy = closest.y - end.y;
         return Math.max(0, Math.min(1, (dx * edge.x + dy * edge.y) / edgeLen2));
     }
-    function getStartValueFromMouse(mouse) {
+    function getStartValueFromMouse(mouse, pointerType) {
         if (!onStartValueSelect)
             return null;
         const start = HEXAGON_VERTICES[5];
         const end = HEXAGON_VERTICES[0];
         const hitDistance = distanceToSegment(mouse, start, end);
-        if (hitDistance > scaleToMath(START_EDGE_HIT_PX))
+        if (hitDistance > scaleToMath(START_EDGE_HIT_PX * getHitScale(pointerType)))
             return null;
         return projectStartValue(mouse);
     }
-    function updateCursor(mouse) {
-        const hit = hitTest(mouse);
+    function updateCursor(mouse, pointerType) {
+        if (pointerType !== 'mouse') {
+            return;
+        }
+        const hit = hitTest(mouse, pointerType);
         switch (hit.kind) {
             case 'local-c-handle':
             case 'control-point':
@@ -115,13 +154,28 @@ export function setupInteraction(canvas, state, getShapeMode, getGammas, getLoca
                 canvas.style.cursor = 'move';
                 break;
             default:
-                canvas.style.cursor = getStartValueFromMouse(mouse) === null ? 'default' : 'pointer';
+                canvas.style.cursor = getStartValueFromMouse(mouse, pointerType) === null
+                    ? 'default'
+                    : 'pointer';
         }
     }
-    function onMouseDown(e) {
-        const mouse = getMouseMath(e);
-        const hit = hitTest(mouse);
+    function stopInteraction() {
+        interaction = { kind: 'idle' };
+        if (activePointerId !== null && canvas.hasPointerCapture(activePointerId)) {
+            canvas.releasePointerCapture(activePointerId);
+        }
+        activePointerId = null;
+        activePointerType = 'mouse';
+    }
+    function onPointerDown(e) {
+        if (!e.isPrimary) {
+            return;
+        }
+        const pointerType = e.pointerType || 'mouse';
+        const mouse = getPointerMath(e);
+        const hit = hitTest(mouse, pointerType);
         const shapeMode = getShapeMode();
+        let startedInteraction = true;
         switch (hit.kind) {
             case 'local-c-handle':
                 interaction = {
@@ -166,7 +220,7 @@ export function setupInteraction(canvas, state, getShapeMode, getGammas, getLoca
                 break;
             default:
                 {
-                    const startValue = getStartValueFromMouse(mouse);
+                    const startValue = getStartValueFromMouse(mouse, pointerType);
                     if (startValue !== null) {
                         interaction = { kind: 'dragging-start-value' };
                         onStartValueSelect?.(startValue);
@@ -174,15 +228,25 @@ export function setupInteraction(canvas, state, getShapeMode, getGammas, getLoca
                         break;
                     }
                 }
-                return;
+                startedInteraction = false;
         }
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', onMouseUp);
+        if (!startedInteraction) {
+            updateCursor(mouse, pointerType);
+            return;
+        }
+        activePointerId = e.pointerId;
+        activePointerType = pointerType;
+        canvas.setPointerCapture(e.pointerId);
+        e.preventDefault();
     }
-    function onMouseMove(e) {
-        const mouse = getMouseMath(e);
+    function onPointerMove(e) {
+        const pointerType = activePointerId === e.pointerId ? activePointerType : (e.pointerType || 'mouse');
+        const mouse = getPointerMath(e);
         if (interaction.kind === 'idle') {
-            updateCursor(mouse);
+            updateCursor(mouse, pointerType);
+            return;
+        }
+        if (activePointerId !== e.pointerId) {
             return;
         }
         if (interaction.kind === 'dragging-local-c-handle') {
@@ -230,17 +294,37 @@ export function setupInteraction(canvas, state, getShapeMode, getGammas, getLoca
             onStartValueSelect?.(projectStartValue(mouse));
         }
         render();
+        e.preventDefault();
     }
-    function onMouseUp() {
-        interaction = { kind: 'idle' };
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
+    function onPointerUp(e) {
+        if (activePointerId !== e.pointerId) {
+            return;
+        }
+        const mouse = getPointerMath(e);
+        const pointerType = activePointerType;
+        stopInteraction();
+        updateCursor(mouse, pointerType);
     }
-    // Hover cursor updates when idle
-    canvas.addEventListener('mousemove', (e) => {
-        if (interaction.kind === 'idle') {
-            updateCursor(getMouseMath(e));
+    function onPointerCancel(e) {
+        if (activePointerId !== e.pointerId) {
+            return;
+        }
+        stopInteraction();
+        canvas.style.cursor = 'default';
+    }
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerCancel);
+    canvas.addEventListener('pointerleave', (e) => {
+        if (interaction.kind === 'idle' && (e.pointerType || 'mouse') === 'mouse') {
+            canvas.style.cursor = 'default';
         }
     });
-    canvas.addEventListener('mousedown', onMouseDown);
+    canvas.addEventListener('lostpointercapture', () => {
+        interaction = { kind: 'idle' };
+        activePointerId = null;
+        activePointerType = 'mouse';
+        canvas.style.cursor = 'default';
+    });
 }
