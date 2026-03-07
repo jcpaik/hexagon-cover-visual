@@ -1,11 +1,21 @@
 import type { Point } from './types';
 
+const SCALE_RATIO = 0.4;
+
 export const config = {
   canvasSize: 600,
   scale: 240,
   centerX: 300,
   centerY: 300,
 };
+
+export function setCanvasSize(size: number): void {
+  const canvasSize = Math.max(1, Math.round(size));
+  config.canvasSize = canvasSize;
+  config.scale = canvasSize * SCALE_RATIO;
+  config.centerX = canvasSize / 2;
+  config.centerY = canvasSize / 2;
+}
 
 export function mathToCanvas(p: Point): Point {
   return {
@@ -28,3 +38,5 @@ export function scaleToCanvas(d: number): number {
 export function scaleToMath(d: number): number {
   return d / config.scale;
 }
+
+setCanvasSize(config.canvasSize);
