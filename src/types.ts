@@ -13,6 +13,7 @@ export type ShapeMode = 'triangle' | 'local-c' | 'circle';
 
 export type InteractionState =
   | { kind: 'idle' }
+  | { kind: 'pending-half-diagonal-toggle'; index: number; startMouse: Point }
   | { kind: 'dragging-local-c-handle'; index: number }
   | { kind: 'dragging-triangle'; startMouse: Point; startPos: Point; startControl: Point }
   | { kind: 'rotating-triangle'; startMouse: Point; startAngle: number; startPos: Point }

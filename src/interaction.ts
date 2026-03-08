@@ -20,6 +20,8 @@ const LOCAL_C_RAY_HIT_PX = 10;
 const CONTROL_POINT_HIT_PX = 8;
 const BORDER_HIT_PX = 6;
 const START_EDGE_HIT_PX = 8;
+const HALF_DIAGONAL_HIT_PX = 10;
+const CLICK_CANCEL_DISTANCE_PX = 6;
 const PEN_HIT_SCALE = 1.35;
 const TOUCH_HIT_SCALE = 1.75;
 
@@ -32,6 +34,8 @@ export function setupInteraction(
   onLocalCChange: (index: number, value: number) => void,
   render: () => void,
   onStartValueSelect?: (value: number) => void,
+  onHalfDiagonalHover?: (index: number | null) => void,
+  onHalfDiagonalToggle?: (index: number) => void,
 ): void {
   let interaction: InteractionState = { kind: 'idle' };
   let activePointerId: number | null = null;
@@ -122,6 +126,24 @@ export function setupInteraction(
     const vertex = HEXAGON_VERTICES[index];
     const closest = closestPointOnSegment(mouse, boundary, vertex);
     return Math.max(0, Math.min(1 - gamma, distance(closest, vertex)));
+  }
+
+  function getHalfDiagonalHoverIndex(mouse: Point, pointerType: string): number | null {
+    const maxDistance = scaleToMath(HALF_DIAGONAL_HIT_PX * getHitScale(pointerType));
+    let bestIndex: number | null = null;
+    let bestDistance = Infinity;
+
+    for (let i = 0; i < HEXAGON_VERTICES.length; i++) {
+      const vertex = HEXAGON_VERTICES[i];
+      const diagonalDistance = distanceToSegment(mouse, { x: 0, y: 0 }, vertex);
+      if (diagonalDistance > maxDistance || diagonalDistance >= bestDistance) {
+        continue;
+      }
+      bestDistance = diagonalDistance;
+      bestIndex = i;
+    }
+
+    return bestIndex;
   }
 
   function hitTest(mouse: Point, pointerType: string): HitTarget {
@@ -224,6 +246,7 @@ export function setupInteraction(
 
     const pointerType = e.pointerType || 'mouse';
     const mouse = getPointerMath(e);
+    const halfDiagonalIndex = getHalfDiagonalHoverIndex(mouse, pointerType);
     const hit = hitTest(mouse, pointerType);
     const shapeMode = getShapeMode();
     let startedInteraction = true;
@@ -271,6 +294,14 @@ export function setupInteraction(
         break;
       default:
         {
+          if (halfDiagonalIndex !== null) {
+            interaction = {
+              kind: 'pending-half-diagonal-toggle',
+              index: halfDiagonalIndex,
+              startMouse: mouse,
+            };
+            break;
+          }
           const startValue = getStartValueFromMouse(mouse, pointerType);
           if (startValue !== null) {
             interaction = { kind: 'dragging-start-value' };
@@ -297,6 +328,7 @@ export function setupInteraction(
     const pointerType =
       activePointerId === e.pointerId ? activePointerType : (e.pointerType || 'mouse');
     const mouse = getPointerMath(e);
+    onHalfDiagonalHover?.(getHalfDiagonalHoverIndex(mouse, pointerType));
 
     if (interaction.kind === 'idle') {
       updateCursor(mouse, pointerType);
@@ -304,6 +336,15 @@ export function setupInteraction(
     }
 
     if (activePointerId !== e.pointerId) {
+      return;
+    }
+
+    if (interaction.kind === 'pending-half-diagonal-toggle') {
+      const moved = distance(mouse, interaction.startMouse);
+      if (moved > scaleToMath(CLICK_CANCEL_DISTANCE_PX * getHitScale(pointerType))) {
+        stopInteraction();
+        updateCursor(mouse, pointerType);
+      }
       return;
     }
 
@@ -376,6 +417,13 @@ export function setupInteraction(
 
     const mouse = getPointerMath(e);
     const pointerType = activePointerType;
+    if (interaction.kind === 'pending-half-diagonal-toggle') {
+      onHalfDiagonalToggle?.(interaction.index);
+      stopInteraction();
+      updateCursor(mouse, pointerType);
+      render();
+      return;
+    }
     stopInteraction();
     updateCursor(mouse, pointerType);
   }
@@ -394,6 +442,7 @@ export function setupInteraction(
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerCancel);
   canvas.addEventListener('pointerleave', (e) => {
+    onHalfDiagonalHover?.(null);
     if (interaction.kind === 'idle' && (e.pointerType || 'mouse') === 'mouse') {
       canvas.style.cursor = 'default';
     }
@@ -402,6 +451,7 @@ export function setupInteraction(
     interaction = { kind: 'idle' };
     activePointerId = null;
     activePointerType = 'mouse';
+    onHalfDiagonalHover?.(null);
     canvas.style.cursor = 'default';
   });
 }

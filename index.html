@@ -53,6 +53,18 @@
             <button type="button" id="admissible-reset">Reset</button>
           </div>
         </details>
+        <details id="controller-state-panel">
+          <summary>Controller State</summary>
+          <div class="editor-note">Copy JSON to save the current controllers, then paste and load to restore.</div>
+          <textarea id="controller-state" spellcheck="false"></textarea>
+          <div id="controller-state-row">
+            <div id="controller-state-status">Snapshot updates automatically.</div>
+            <div id="controller-state-actions">
+              <button type="button" id="controller-state-copy">Copy</button>
+              <button type="button" id="controller-state-load">Load</button>
+            </div>
+          </div>
+        </details>
         <div id="slider-row" hidden>
           <label for="c-slider">c = <span id="c-value">0.50</span></label>
           <input type="range" id="c-slider" min="0" max="1" step="0.01" value="0.50" />

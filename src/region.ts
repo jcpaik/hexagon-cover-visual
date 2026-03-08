@@ -15,6 +15,7 @@ const AXIS_COLOR = "#94a3b8";
 const IDENTITY_COLOR = "#cbd5e1";
 const SINGLE_GRAPH_COLOR = "#2563eb";
 const COMPOSITION_COLOR = "#b45309";
+const HOVER_GRAPH_COLOR = "#facc15";
 const PAIR_PASS_COLOR = "#2563eb";
 const PAIR_FAIL_COLOR = "#dc2626";
 const POINT_COLOR = "#dc2626";
@@ -39,7 +40,9 @@ export interface RegionRenderer {
   setMode(mode: GraphMode): void;
   setSingleParameter(value: number): void;
   setLocalCs(localCs: number[]): void;
+  setSelectedLocalCs(localCs: number[]): void;
   setStartValue(value: number): void;
+  setHoverLocalC(value: number | null): void;
 }
 
 function clamp01(value: number): number {
@@ -87,7 +90,9 @@ export function createRegionRenderer(
   let mode: GraphMode = "composition";
   let singleParameter = 0.5;
   let localCs = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
+  let selectedLocalCs: number[] = [];
   let startValue = 0.25;
+  let hoverLocalC: number | null = null;
   let pairParameters: PairParameters = { c1: 0.5, c2: 0.5 };
   const pairTrace: PairTracePoint[] = [];
   let draggingPairController = false;
@@ -376,9 +381,17 @@ export function createRegionRenderer(
     return composeLocalCs(localCs, x);
   }
 
-  function sampleGraphPoints(): GraphPoint[] {
-    const start: GraphPoint = { x: 0, y: evaluate(0) };
-    const end: GraphPoint = { x: 1, y: evaluate(1) };
+  function evaluateHover(x: number): number {
+    return gAtLocalC(hoverLocalC ?? 0, x);
+  }
+
+  function evaluateSelectedComposition(x: number): number {
+    return composeLocalCs(selectedLocalCs, x);
+  }
+
+  function sampleGraphPointsWithEvaluator(evaluator: (x: number) => number): GraphPoint[] {
+    const start: GraphPoint = { x: 0, y: evaluator(0) };
+    const end: GraphPoint = { x: 1, y: evaluator(1) };
     const output: GraphPoint[] = [start];
 
     function subdivide(
@@ -400,7 +413,7 @@ export function createRegionRenderer(
 
       for (const fraction of testFractions) {
         const x = left.x + span * fraction;
-        const point: GraphPoint = { x, y: evaluate(x) };
+        const point: GraphPoint = { x, y: evaluator(x) };
         const canvasPoint = toCanvas(point.x, point.y);
         const deviation = distanceToSegment(
           canvasPoint,
@@ -428,7 +441,7 @@ export function createRegionRenderer(
   }
 
   function drawGraph(pairExperiment: ComposePairExperimentResult | null): void {
-    const points = sampleGraphPoints();
+    const points = sampleGraphPointsWithEvaluator(evaluate);
     ctx.beginPath();
 
     for (let i = 0; i < points.length; i++) {
@@ -450,6 +463,66 @@ export function createRegionRenderer(
             : PAIR_FAIL_COLOR;
     ctx.lineWidth = 2.5;
     ctx.stroke();
+  }
+
+  function drawHoverGraph(): void {
+    if (mode !== "composition" || hoverLocalC === null) {
+      return;
+    }
+
+    const points = sampleGraphPointsWithEvaluator(evaluateHover);
+    ctx.beginPath();
+
+    for (let i = 0; i < points.length; i++) {
+      const point = toCanvas(points[i].x, points[i].y);
+      if (i === 0) {
+        ctx.moveTo(point.x, point.y);
+      } else {
+        ctx.lineTo(point.x, point.y);
+      }
+    }
+
+    ctx.strokeStyle = HOVER_GRAPH_COLOR;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = HOVER_GRAPH_COLOR;
+    ctx.font = `${smallFontSize}px monospace`;
+    ctx.fillText(`hover g_c, c = ${hoverLocalC.toFixed(3)}`, padding, padding - 14);
+  }
+
+  function drawSelectedCompositionGraph(): void {
+    if (mode !== "composition" || selectedLocalCs.length === 0) {
+      return;
+    }
+
+    const points = sampleGraphPointsWithEvaluator(evaluateSelectedComposition);
+    ctx.beginPath();
+
+    for (let i = 0; i < points.length; i++) {
+      const point = toCanvas(points[i].x, points[i].y);
+      if (i === 0) {
+        ctx.moveTo(point.x, point.y);
+      } else {
+        ctx.lineTo(point.x, point.y);
+      }
+    }
+
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    const x = clamp01(startValue);
+    const y = evaluateSelectedComposition(x);
+    const point = toCanvas(x, y);
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 4.5, 0, 2 * Math.PI);
+    ctx.fillStyle = "#f59e0b";
+    ctx.fill();
+
+    ctx.fillStyle = TEXT_COLOR;
+    ctx.font = `${smallFontSize}px monospace`;
+    ctx.fillText(`selected compose (${selectedLocalCs.length})`, padding, padding - 30);
   }
 
   function drawMarker(): void {
@@ -561,6 +634,8 @@ export function createRegionRenderer(
     const pairExperiment = mode === "pair" ? getPairExperiment() : null;
     drawFrame();
     drawGraph(pairExperiment);
+    drawSelectedCompositionGraph();
+    drawHoverGraph();
     drawMarker();
     if (pairExperiment) {
       drawPairController(pairExperiment);
@@ -609,8 +684,14 @@ export function createRegionRenderer(
     setLocalCs(nextLocalCs: number[]): void {
       localCs = nextLocalCs.map(clamp01);
     },
+    setSelectedLocalCs(nextLocalCs: number[]): void {
+      selectedLocalCs = nextLocalCs.map(clamp01);
+    },
     setStartValue(value: number): void {
       startValue = clamp01(value);
+    },
+    setHoverLocalC(value: number | null): void {
+      hoverLocalC = value === null ? null : clamp01(value);
     },
   };
 }
