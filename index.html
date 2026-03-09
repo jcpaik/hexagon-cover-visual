@@ -21,6 +21,44 @@
             Circle
           </button>
         </div>
+        <div id="strict-check-panel">
+          <label id="strict-check-toggle-row" for="strict-check-toggle">
+            <input type="checkbox" id="strict-check-toggle" />
+            <span>Strict check</span>
+          </label>
+          <div id="strict-eps-controls" hidden>
+            <label class="strict-eps-label" for="strict-eps-slider">
+              strictEps = <span id="strict-eps-value">0.0000000</span>
+            </label>
+            <input
+              type="range"
+              id="strict-eps-slider"
+              min="0"
+              max="0.0001"
+              step="0.0000001"
+              value="0"
+            />
+            <div id="strict-eps-input-row">
+              <label for="strict-eps-input">Value</label>
+              <input
+                type="number"
+                id="strict-eps-input"
+                min="0"
+                max="0.0001"
+                step="0.0000001"
+                value="0"
+              />
+              <label for="strict-eps-max-input">Slider max</label>
+              <input
+                type="number"
+                id="strict-eps-max-input"
+                min="0.0000001"
+                step="0.0000001"
+                value="0.0001"
+              />
+            </div>
+          </div>
+        </div>
         <canvas id="canvas" width="600" height="600"></canvas>
         <div class="readout" id="gamma-values">
           γ = (0.000, 0.000, 0.000, 0.000, 0.000, 0.000)
@@ -46,7 +84,9 @@
         <canvas id="region-canvas" width="600" height="600"></canvas>
         <details id="admissible-editor-panel">
           <summary>Admissible Set Function</summary>
-          <div class="editor-note">Assume clamped inputs with a &le; b. Return a boolean.</div>
+          <div class="editor-note">
+            Assume clamped inputs with a &le; b. Return a boolean. <code>STRICT_EPS</code> is available.
+          </div>
           <textarea id="admissible-editor" spellcheck="false"></textarea>
           <div id="admissible-editor-row">
             <div id="admissible-status">Default ordered predicate active.</div>

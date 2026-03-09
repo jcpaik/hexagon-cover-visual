@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1370" height="820" viewBox="0 0 1370 820">
+<style>
+text { font-family: monospace; fill: #0f172a; }
+.title { font-size: 18px; font-weight: 700; }
+.body { font-size: 12px; }
+.label { font-size: 13px; font-weight: 700; }
+</style>
+<rect x="0" y="0" width="1370" height="820" fill="#ffffff"/>
+<text x="30.0" y="22" class="title">Seven closed equilateral triangles with side &lt; 1 covering the hexagon skeleton</text>
+<text x="30.0" y="42" class="body">start x = 0.15606841423778808, strictEps = 0.0008, G(x) = 0.1413164858354149772787232350352325224200246104586870478378792951102512610900785299369187475825553044876436671167115424425260587897804075755422866585377483875865, G(x) - x = -0.0147519284023731027212767649647674775799753895413129521621207048897487389099214700630812524174446955123563328832884575574739412102195924244577133414622516124135</text>
+<polygon points="313.493,360.838 556.631,327.435 406.135,133.572" fill="#0ea5e9" fill-opacity="0.16" stroke="#0ea5e9" stroke-width="2"/>
+<text x="431.420" y="267.948" class="label">C</text>
+<polygon points="571.420,367.478 728.518,178.453 486.268,136.915" fill="#ef4444" fill-opacity="0.16" stroke="#ef4444" stroke-width="2"/>
+<text x="601.402" y="221.615" class="label">V0</text>
+<polygon points="376.566,327.265 499.433,114.454 253.700,114.454" fill="#f59e0b" fill-opacity="0.16" stroke="#f59e0b" stroke-width="2"/>
+<text x="382.566" y="179.391" class="label">V1</text>
+<polygon points="117.768,304.293 363.500,304.293 240.634,91.482" fill="#10b981" fill-opacity="0.16" stroke="#10b981" stroke-width="2"/>
+<text x="246.634" y="227.356" class="label">V2</text>
+<polygon points="207.381,520.028 337.156,311.273 91.482,303.262" fill="#8b5cf6" fill-opacity="0.16" stroke="#8b5cf6" stroke-width="2"/>
+<text x="218.007" y="372.188" class="label">V3</text>
+<polygon points="195.717,540.416 441.450,540.416 318.583,327.605" fill="#ec4899" fill-opacity="0.16" stroke="#ec4899" stroke-width="2"/>
+<text x="324.583" y="463.479" class="label">V4</text>
+<polygon points="456.641,568.159 583.180,357.434 337.417,353.211" fill="#14b8a6" fill-opacity="0.16" stroke="#14b8a6" stroke-width="2"/>
+<text x="465.079" y="420.268" class="label">V5</text>
+<polygon points="596.265,327.435 473.301,114.454 227.371,114.454 104.407,327.435 227.371,540.416 473.301,540.416" fill="none" stroke="#111827" stroke-width="2"/>
+<line x1="596.265" y1="327.435" x2="104.407" y2="327.435" stroke="#111827" stroke-width="1.5"/>
+<line x1="473.301" y1="114.454" x2="227.371" y2="540.416" stroke="#111827" stroke-width="1.5"/>
+<line x1="227.371" y1="114.454" x2="473.301" y2="540.416" stroke="#111827" stroke-width="1.5"/>
+<text x="820.0" y="72" class="label">Triangle side lengths</text>
+<text x="820.0" y="92" class="body">C: side=0.997938057288  center=(0.305306248, 0.217487620)  phi=3.801718971</text>
+<text x="820.0" y="108" class="body">V0: side=0.999413329246  center=(0.996490294, 0.405889048)  phi=4.542573126</text>
+<text x="820.0" y="124" class="body">V1: side=0.999200000000  center=(0.106658361, 0.577581209)  phi=4.712388980</text>
+<text x="820.0" y="140" class="body">V2: side=0.999200000000  center=(-0.446070819, 0.382545096)  phi=3.665191429</text>
+<text x="820.0" y="156" class="body">V3: side=0.999494082847  center=(-0.562476669, -0.206371640)  phi=4.679790573</text>
+<text x="820.0" y="172" class="body">V4: side=0.999200000000  center=(-0.129112902, -0.577581209)  phi=3.665191429</text>
+<text x="820.0" y="188" class="body">V5: side=0.999469224232  center=(0.442173367, -0.401876624)  phi=4.695205935</text>
+<text x="820.0" y="216" class="label">Cycle data</text>
+<text x="820.0" y="236" class="body">V0: gamma=0.839640930  a=0.156068414  b=0.894541639  c=0.161159070  diag-start=0.838840930</text>
+<text x="820.0" y="252" class="body">V1: gamma=0.715589938  a=0.106258361  b=0.892941639  c=0.285210062  diag-start=0.107058361</text>
+<text x="820.0" y="268" class="body">V2: gamma=0.111755680  a=0.107858361  b=0.891341639  c=0.889044320  diag-start=0.108658361</text>
+<text x="820.0" y="284" class="body">V3: gamma=0.095244571  a=0.109458361  b=0.872087098  c=0.905555429  diag-start=0.094444571</text>
+<text x="820.0" y="300" class="body">V4: gamma=0.145602371  a=0.128712902  b=0.870487098  c=0.855197629  diag-start=0.129512902</text>
+<text x="820.0" y="316" class="body">V5: gamma=0.124090653  a=0.130312902  b=0.859483514  c=0.876709347  diag-start=0.123290653</text>
+<text x="820.0" y="344" class="label">Coverage check</text>
+<text x="820.0" y="364" class="body">edge 0: [0.000000, 1.000000]</text>
+<text x="820.0" y="380" class="body">edge 1: [0.000000, 1.000000]</text>
+<text x="820.0" y="396" class="body">edge 2: [0.000000, 1.000000]</text>
+<text x="820.0" y="412" class="body">edge 3: [0.000000, 1.000000]</text>
+<text x="820.0" y="428" class="body">edge 4: [0.000000, 1.000000]</text>
+<text x="820.0" y="444" class="body">edge 5: [0.000000, 1.000000]</text>
+<text x="820.0" y="460" class="body">diag 0: [0.000000, 1.000000]</text>
+<text x="820.0" y="476" class="body">diag 1: [0.000000, 1.000000]</text>
+<text x="820.0" y="492" class="body">diag 2: [0.000000, 1.000000]</text>
+<text x="820.0" y="508" class="body">diag 3: [0.000000, 1.000000]</text>
+<text x="820.0" y="524" class="body">diag 4: [0.000000, 1.000000]</text>
+<text x="820.0" y="540" class="body">diag 5: [0.000000, 1.000000]</text>
+</svg>

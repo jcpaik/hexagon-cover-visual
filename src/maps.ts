@@ -1,27 +1,33 @@
 const EPS = 1e-9;
 const BRACKET_SAMPLES = 512;
 const BINARY_SEARCH_STEPS = 48;
-type OrderedAdmissiblePredicate = (a: number, b: number, c: number) => boolean;
+type OrderedAdmissiblePredicate = (
+  a: number,
+  b: number,
+  c: number,
+  strictEps: number,
+) => boolean;
 
-export const DEFAULT_ADMISSIBLE_ORDERED_SOURCE = `const sum = a + b;
+export const DEFAULT_ADMISSIBLE_ORDERED_SOURCE = `const strict = Math.max(0, STRICT_EPS);
+const sum = a + b;
 const circle = a * a + a * b + b * b;
-if (circle > 1 + EPS) {
+if (circle > 1 - strict + EPS) {
   return false;
 }
 
 const transition = sum ** 4 - sum * sum + a * b;
 const cell1 =
-  sum <= 1 + EPS &&
-  transition <= EPS &&
-  c ** 4 - c * c + a * c - a * a <= EPS;
+  sum <= 1 - strict + EPS &&
+  transition <= -strict + EPS &&
+  c ** 4 - c * c + a * c - a * a <= -strict + EPS;
 const cell2 =
-  sum <= 1 + EPS &&
-  transition >= -EPS &&
-  (sum * sum - 1) * c * c + b * c - b * b <= EPS;
+  sum <= 1 - strict + EPS &&
+  transition >= strict - EPS &&
+  (sum * sum - 1) * c * c + b * c - b * b <= -strict + EPS;
 const cell3 =
-  sum >= 1 - EPS &&
-  c <= 0.5 + EPS &&
-  (a * a - 1) * c * c + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= EPS;
+  sum >= 1 + strict - EPS &&
+  c <= 0.5 - strict + EPS &&
+  (a * a - 1) * c * c + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= -strict + EPS;
 
 return cell1 || cell2 || cell3;`;
 
@@ -29,35 +35,48 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
+function clampNonNegative(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, value);
+}
+
 function circleArcBound(a: number): number {
   const disc = Math.max(0, 4 - 3 * a * a);
   return clamp01((-a + Math.sqrt(disc)) / 2);
 }
 
+let strictCheckEnabled = false;
+let strictEps = 0;
+
 function defaultAdmissibleOrdered(
   a: number,
   b: number,
   c: number,
+  strictInput: number,
 ): boolean {
+  const strict = clampNonNegative(strictInput);
   const sum = a + b;
   const circle = a * a + a * b + b * b;
-  if (circle > 1 + EPS) {
+  if (circle > 1 - strict + EPS) {
     return false;
   }
 
   const transition = sum ** 4 - sum * sum + a * b;
   const cell1 =
-    sum <= 1 + EPS &&
-    transition <= EPS &&
-    c ** 4 - c * c + a * c - a * a <= EPS;
+    sum <= 1 - strict + EPS &&
+    transition <= -strict + EPS &&
+    c ** 4 - c * c + a * c - a * a <= -strict + EPS;
   const cell2 =
-    sum <= 1 + EPS &&
-    transition >= -EPS &&
-    (sum * sum - 1) * c * c + b * c - b * b <= EPS;
+    sum <= 1 - strict + EPS &&
+    transition >= strict - EPS &&
+    (sum * sum - 1) * c * c + b * c - b * b <= -strict + EPS;
   const cell3 =
-    sum >= 1 - EPS &&
-    c <= 0.5 + EPS &&
-    (a * a - 1) * c * c + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= EPS;
+    sum >= 1 + strict - EPS &&
+    c <= 0.5 - strict + EPS &&
+    (a * a - 1) * c * c + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= -strict + EPS;
 
   return cell1 || cell2 || cell3;
 }
@@ -66,16 +85,41 @@ let orderedAdmissiblePredicate: OrderedAdmissiblePredicate = defaultAdmissibleOr
 let orderedAdmissibleSource = DEFAULT_ADMISSIBLE_ORDERED_SOURCE;
 let hasCustomOrderedAdmissibleSource = false;
 
+export function isStrictCheckEnabled(): boolean {
+  return strictCheckEnabled;
+}
+
+export function setStrictCheckEnabled(enabled: boolean): void {
+  strictCheckEnabled = enabled;
+}
+
+export function getStrictEps(): number {
+  return strictEps;
+}
+
+export function setStrictEps(value: number): void {
+  strictEps = clampNonNegative(value);
+}
+
+export function getEffectiveStrictEps(): number {
+  return strictCheckEnabled ? strictEps : 0;
+}
+
 function admissibleOrdered(aInput: number, bInput: number, localCInput: number): boolean {
   const a = clamp01(aInput);
   const b = clamp01(bInput);
   const c = clamp01(localCInput);
+  const strict = getEffectiveStrictEps();
 
   if (a > b + EPS) {
     return false;
   }
 
-  return orderedAdmissiblePredicate(a, b, c);
+  if (strict > 0 && b - a < strict - EPS) {
+    return false;
+  }
+
+  return orderedAdmissiblePredicate(a, b, c, strict);
 }
 
 export function getAdmissibleOrderedSource(): string {
@@ -99,15 +143,23 @@ export function setAdmissibleOrderedSource(source: string): { ok: true } | { ok:
       'b',
       'c',
       'EPS',
+      'STRICT_EPS',
       'clamp01',
       `"use strict";\n${source}`,
-    ) as (a: number, b: number, c: number, eps: number, clamp: typeof clamp01) => unknown;
+    ) as (
+      a: number,
+      b: number,
+      c: number,
+      eps: number,
+      strictEps: number,
+      clamp: typeof clamp01,
+    ) => unknown;
 
-    const candidate: OrderedAdmissiblePredicate = (a, b, c) =>
-      Boolean(compiled(a, b, c, EPS, clamp01));
+    const candidate: OrderedAdmissiblePredicate = (a, b, c, strictEpsValue) =>
+      Boolean(compiled(a, b, c, EPS, strictEpsValue, clamp01));
 
-    candidate(0.1, 0.2, 0.3);
-    candidate(0.4, 0.4, 0.1);
+    candidate(0.1, 0.2, 0.3, getEffectiveStrictEps());
+    candidate(0.4, 0.4, 0.1, getEffectiveStrictEps());
 
     orderedAdmissiblePredicate = candidate;
     orderedAdmissibleSource = source;
@@ -185,13 +237,13 @@ export function maxAdmissibleCoverage(
 export function gAtLocalC(localCInput: number, aInput: number): number {
   const localC = clamp01(localCInput);
   const a = clamp01(aInput);
-  return clamp01(1 - maxAdmissibleCoverage(a, localC));
+  return clamp01(1 + getEffectiveStrictEps() - maxAdmissibleCoverage(a, localC));
 }
 
 export function gAtGamma(gammaInput: number, aInput: number): number {
   const gamma = clamp01(gammaInput);
   const a = clamp01(aInput);
-  const localC = 1 - gamma;
+  const localC = clamp01(1 + getEffectiveStrictEps() - gamma);
   return gAtLocalC(localC, a);
 }
 

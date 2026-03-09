@@ -68,6 +68,71 @@ canvas {
   flex-wrap: wrap;
 }
 
+#strict-check-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  padding: 8px;
+}
+
+#strict-check-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: monospace;
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+}
+
+#strict-check-toggle-row input {
+  margin: 0;
+}
+
+#strict-eps-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.strict-eps-label {
+  font-family: monospace;
+  font-size: 13px;
+  color: #334155;
+}
+
+#strict-eps-slider {
+  width: 100%;
+}
+
+#strict-eps-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-family: monospace;
+  font-size: 12px;
+  color: #475569;
+}
+
+#strict-eps-input-row label {
+  white-space: nowrap;
+}
+
+#strict-eps-input,
+#strict-eps-max-input {
+  flex: 1 1 150px;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
 #admissible-editor-panel {
   border: 1px solid #cbd5e1;
   background: #f8fafc;

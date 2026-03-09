@@ -5,9 +5,14 @@ import { drawHexagon, HEXAGON_VERTICES } from './hexagon';
 import {
   computeChainValuesForLocalCs,
   getAdmissibleOrderedSource,
+  getEffectiveStrictEps,
+  getStrictEps,
   isCustomAdmissibleOrderedSourceActive,
+  isStrictCheckEnabled,
   resetAdmissibleOrderedSource,
   setAdmissibleOrderedSource,
+  setStrictCheckEnabled,
+  setStrictEps,
 } from './maps';
 import { drawControlPoint, drawShape, getInnerGammas } from './triangle';
 import { setupInteraction } from './interaction';
@@ -36,23 +41,31 @@ const controllerState = document.getElementById('controller-state') as HTMLTextA
 const controllerStateStatus = document.getElementById('controller-state-status') as HTMLDivElement;
 const controllerStateCopyButton = document.getElementById('controller-state-copy') as HTMLButtonElement;
 const controllerStateLoadButton = document.getElementById('controller-state-load') as HTMLButtonElement;
+const strictCheckToggle = document.getElementById('strict-check-toggle') as HTMLInputElement;
+const strictEpsControls = document.getElementById('strict-eps-controls') as HTMLDivElement;
+const strictEpsSlider = document.getElementById('strict-eps-slider') as HTMLInputElement;
+const strictEpsValueLabel = document.getElementById('strict-eps-value') as HTMLSpanElement;
+const strictEpsInput = document.getElementById('strict-eps-input') as HTMLInputElement;
+const strictEpsMaxInput = document.getElementById('strict-eps-max-input') as HTMLInputElement;
 
 const triangleState: TriangleState = {
   position: { x: 0, y: 0 },
   angle: 0,
   controlPoint: { x: 0, y: 0 },
 };
+const DEFAULT_STRICT_EPS_UPPER_BOUND = 0.0001;
 let startValue = 0.25;
 let graphMode: GraphMode = 'composition';
 let shapeMode: ShapeMode = 'triangle';
-let currentGammas = Array(6).fill(0);
+let currentLocalCMaxima = Array(6).fill(1);
 let manualLocalCs = Array(6).fill(0.5);
 let admissibleEditorTimer: number | null = null;
 let hoveredHalfDiagonalIndex: number | null = null;
 let selectedHalfDiagonalIndices: number[] = [];
+let strictEpsUpperBound = DEFAULT_STRICT_EPS_UPPER_BOUND;
 
 interface ControllerSnapshot {
-  version: 1;
+  version: 2;
   shapeMode: ShapeMode;
   graphMode: GraphMode;
   startValue: number;
@@ -61,7 +74,12 @@ interface ControllerSnapshot {
   manualLocalCs: number[];
   selectedHalfDiagonalIndices: number[];
   admissibleSource: string;
+  strictCheckEnabled: boolean;
+  strictEps: number;
+  strictEpsUpperBound: number;
 }
+
+type RawControllerSnapshot = Omit<Partial<ControllerSnapshot>, 'version'> & { version?: 1 | 2 };
 
 function getResponsiveCanvasSize(target: HTMLCanvasElement): number {
   const rect = target.getBoundingClientRect();
@@ -135,7 +153,8 @@ function drawPropagationMarkers(ctx2d: CanvasRenderingContext2D, chain: number[]
 }
 
 function getLocalCMaxima(gammas: number[]): number[] {
-  return gammas.map((gamma) => Math.max(0, 1 - gamma));
+  const strict = getEffectiveStrictEps();
+  return gammas.map((gamma) => clamp01(1 + strict - gamma));
 }
 
 function clampToLocalCMax(value: number, maxValue: number): number {
@@ -144,6 +163,32 @@ function clampToLocalCMax(value: number, maxValue: number): number {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function clampNonNegative(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, value);
+}
+
+function clampStrictEpsUpperBound(value: number): number {
+  const clamped = clampNonNegative(value);
+  return clamped > 0 ? clamped : DEFAULT_STRICT_EPS_UPPER_BOUND;
+}
+
+function clampStrictEpsValue(value: number, upperBound: number): number {
+  return Math.min(clampStrictEpsUpperBound(upperBound), clampNonNegative(value));
+}
+
+function formatStrictEps(value: number): string {
+  return clampNonNegative(value).toFixed(7);
+}
+
+function getStrictEpsStep(upperBound: number): string {
+  const safeUpperBound = clampStrictEpsUpperBound(upperBound);
+  return Math.max(safeUpperBound / 1000, 1e-9).toString();
 }
 
 function isPoint(value: unknown): value is Point {
@@ -175,7 +220,7 @@ function setControllerStateStatus(text: string, isError = false): void {
 
 function getControllerSnapshot(): ControllerSnapshot {
   return {
-    version: 1,
+    version: 2,
     shapeMode,
     graphMode,
     startValue: clamp01(startValue),
@@ -188,6 +233,9 @@ function getControllerSnapshot(): ControllerSnapshot {
     manualLocalCs: manualLocalCs.map(clamp01),
     selectedHalfDiagonalIndices: selectedHalfDiagonalIndices.slice(),
     admissibleSource: admissibleEditor.value,
+    strictCheckEnabled: isStrictCheckEnabled(),
+    strictEps: getStrictEps(),
+    strictEpsUpperBound,
   };
 }
 
@@ -197,9 +245,9 @@ function syncControllerSnapshot(): void {
 }
 
 function parseControllerSnapshot(raw: string): ControllerSnapshot {
-  const parsed = JSON.parse(raw) as Partial<ControllerSnapshot>;
+  const parsed = JSON.parse(raw) as RawControllerSnapshot;
 
-  if (parsed.version !== 1) {
+  if (parsed.version !== 1 && parsed.version !== 2) {
     throw new Error('Unsupported snapshot version.');
   }
   if (!isShapeMode(parsed.shapeMode)) {
@@ -238,9 +286,29 @@ function parseControllerSnapshot(raw: string): ControllerSnapshot {
   if (typeof parsed.admissibleSource !== 'string') {
     throw new Error('Invalid admissibleSource.');
   }
+  if ('strictCheckEnabled' in parsed && typeof parsed.strictCheckEnabled !== 'boolean') {
+    throw new Error('Invalid strictCheckEnabled.');
+  }
+  if ('strictEps' in parsed && (typeof parsed.strictEps !== 'number' || !Number.isFinite(parsed.strictEps))) {
+    throw new Error('Invalid strictEps.');
+  }
+  if (
+    'strictEpsUpperBound' in parsed
+    && (
+      typeof parsed.strictEpsUpperBound !== 'number'
+      || !Number.isFinite(parsed.strictEpsUpperBound)
+      || parsed.strictEpsUpperBound <= 0
+    )
+  ) {
+    throw new Error('Invalid strictEpsUpperBound.');
+  }
+
+  const parsedStrictEpsUpperBound = clampStrictEpsUpperBound(
+    parsed.strictEpsUpperBound ?? DEFAULT_STRICT_EPS_UPPER_BOUND,
+  );
 
   return {
-    version: 1,
+    version: 2,
     shapeMode: parsed.shapeMode,
     graphMode: parsed.graphMode,
     startValue: clamp01(parsed.startValue),
@@ -253,6 +321,9 @@ function parseControllerSnapshot(raw: string): ControllerSnapshot {
     manualLocalCs: parsed.manualLocalCs.map(clamp01),
     selectedHalfDiagonalIndices: Array.from(new Set(parsed.selectedHalfDiagonalIndices)),
     admissibleSource: parsed.admissibleSource,
+    strictCheckEnabled: parsed.strictCheckEnabled ?? false,
+    strictEps: clampStrictEpsValue(parsed.strictEps ?? 0, parsedStrictEpsUpperBound),
+    strictEpsUpperBound: parsedStrictEpsUpperBound,
   };
 }
 
@@ -275,6 +346,10 @@ function loadControllerSnapshot(raw: string): void {
   selectedHalfDiagonalIndices = snapshot.selectedHalfDiagonalIndices.slice();
   hoveredHalfDiagonalIndex = null;
   admissibleEditor.value = snapshot.admissibleSource;
+  strictEpsUpperBound = snapshot.strictEpsUpperBound;
+  setStrictCheckEnabled(snapshot.strictCheckEnabled);
+  setStrictEps(snapshot.strictEps);
+  syncStrictCheckControls();
   syncAdmissibleEditorStatus();
   syncModeButtons();
   render();
@@ -284,7 +359,7 @@ function loadControllerSnapshot(raw: string): void {
 
 function drawLocalCControls(
   ctx2d: CanvasRenderingContext2D,
-  gammas: number[],
+  maxima: number[],
   currentLocalCs: number[],
 ): void {
   const handles = currentLocalCs.map((value, index) => localCPoint(index, value));
@@ -293,7 +368,7 @@ function drawLocalCControls(
   ctx2d.strokeStyle = '#fef3c7';
   ctx2d.lineWidth = 2;
   for (let i = 0; i < 6; i++) {
-    const start = mathToCanvas(radialPoint(i, gammas[i]));
+    const start = mathToCanvas(localCPoint(i, maxima[i]));
     const end = mathToCanvas(HEXAGON_VERTICES[i]);
     ctx2d.beginPath();
     ctx2d.moveTo(start.x, start.y);
@@ -399,6 +474,34 @@ function setAdmissibleStatus(text: string, isError = false): void {
   admissibleStatus.style.color = isError ? '#b91c1c' : '#475569';
 }
 
+function syncStrictCheckControls(): void {
+  const strictEps = clampStrictEpsValue(getStrictEps(), strictEpsUpperBound);
+  if (strictEps !== getStrictEps()) {
+    setStrictEps(strictEps);
+  }
+
+  const upperBound = clampStrictEpsUpperBound(strictEpsUpperBound);
+  if (upperBound !== strictEpsUpperBound) {
+    strictEpsUpperBound = upperBound;
+  }
+
+  const step = getStrictEpsStep(strictEpsUpperBound);
+  strictCheckToggle.checked = isStrictCheckEnabled();
+  strictEpsControls.hidden = !isStrictCheckEnabled();
+  strictEpsSlider.min = '0';
+  strictEpsSlider.max = strictEpsUpperBound.toString();
+  strictEpsSlider.step = step;
+  strictEpsSlider.value = strictEps.toString();
+  strictEpsInput.min = '0';
+  strictEpsInput.max = strictEpsUpperBound.toString();
+  strictEpsInput.step = step;
+  strictEpsInput.value = formatStrictEps(strictEps);
+  strictEpsValueLabel.textContent = formatStrictEps(strictEps);
+  strictEpsMaxInput.min = step;
+  strictEpsMaxInput.step = step;
+  strictEpsMaxInput.value = formatStrictEps(strictEpsUpperBound);
+}
+
 function syncAdmissibleEditorStatus(): void {
   setAdmissibleStatus(
     isCustomAdmissibleOrderedSourceActive()
@@ -422,6 +525,7 @@ function render(): void {
   let gammas: number[];
   let maxima: number[];
   let localCs: number[];
+  const strict = getEffectiveStrictEps();
 
   if (shapeMode === 'local-c') {
     gammas = Array(6).fill(0);
@@ -433,7 +537,7 @@ function render(): void {
     maxima = getLocalCMaxima(gammas);
     localCs = maxima;
   }
-  currentGammas = gammas.slice();
+  currentLocalCMaxima = maxima.slice();
 
   ctx.clearRect(0, 0, config.canvasSize, config.canvasSize);
   drawHexagon(ctx);
@@ -449,10 +553,12 @@ function render(): void {
     gammaValues.textContent = 'manual c_i mode';
     localCBounds.textContent = `max c = ${formatTuple(maxima)}`;
     localCValues.textContent = `c = ${formatTuple(localCs)}`;
-    drawLocalCControls(ctx, gammas, localCs);
+    drawLocalCControls(ctx, maxima, localCs);
   } else {
     gammaValues.textContent = `γ = ${formatTuple(gammas)}`;
-    localCBounds.textContent = `1 - γ = ${formatTuple(maxima)}`;
+    localCBounds.textContent = strict > 0
+      ? `1 - γ + strictEps = ${formatTuple(maxima)}`
+      : `1 - γ = ${formatTuple(maxima)}`;
     localCValues.textContent = `c = ${formatTuple(localCs)}`;
   }
   drawPropagationMarkers(ctx, chain);
@@ -476,8 +582,34 @@ cSlider.addEventListener('input', () => {
   render();
 });
 
+strictCheckToggle.addEventListener('change', () => {
+  setStrictCheckEnabled(strictCheckToggle.checked);
+  syncStrictCheckControls();
+  render();
+});
+
+strictEpsSlider.addEventListener('input', () => {
+  setStrictEps(clampStrictEpsValue(parseFloat(strictEpsSlider.value), strictEpsUpperBound));
+  syncStrictCheckControls();
+  render();
+});
+
+strictEpsInput.addEventListener('change', () => {
+  setStrictEps(clampStrictEpsValue(parseFloat(strictEpsInput.value), strictEpsUpperBound));
+  syncStrictCheckControls();
+  render();
+});
+
+strictEpsMaxInput.addEventListener('change', () => {
+  strictEpsUpperBound = clampStrictEpsUpperBound(parseFloat(strictEpsMaxInput.value));
+  setStrictEps(clampStrictEpsValue(getStrictEps(), strictEpsUpperBound));
+  syncStrictCheckControls();
+  render();
+});
+
 cValueLabel.textContent = parseFloat(cSlider.value).toFixed(2);
 admissibleEditor.value = getAdmissibleOrderedSource();
+syncStrictCheckControls();
 syncAdmissibleEditorStatus();
 
 admissibleEditor.addEventListener('input', () => {
@@ -546,11 +678,10 @@ setupInteraction(
   canvas,
   triangleState,
   () => shapeMode,
-  () => currentGammas,
+  () => currentLocalCMaxima,
   () => manualLocalCs,
   (index, value) => {
-    const maxima = getLocalCMaxima(currentGammas);
-    manualLocalCs[index] = clampToLocalCMax(value, maxima[index]);
+    manualLocalCs[index] = clampToLocalCMax(value, currentLocalCMaxima[index] ?? 1);
   },
   render,
   (value) => {

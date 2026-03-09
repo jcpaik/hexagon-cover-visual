@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "shapeMode": "triangle",
+  "graphMode": "composition",
+  "startValue": 0.15606841423778808,
+  "singleParameter": 0.5,
+  "triangleState": {
+    "position": {
+      "x": 0.3048648055802718,
+      "y": 0.21749806813212424
+    },
+    "angle": 0.13728576214609145,
+    "controlPoint": {
+      "x": 0.8248209635416668,
+      "y": 0.00669271271981281
+    }
+  },
+  "manualLocalCs": [
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5
+  ],
+  "selectedHalfDiagonalIndices": [],
+  "admissibleSource": "const strict = Math.max(0, STRICT_EPS);\nconst sum = a + b;\nconst circle = a * a + a * b + b * b;\nif (circle > 1 - strict + EPS) {\n  return false;\n}\n\nconst transition = sum ** 4 - sum * sum + a * b;\nconst cell1 =\n  sum <= 1 - strict + EPS &&\n  transition <= -strict + EPS &&\n  c ** 4 - c * c + a * c - a * a <= -strict + EPS;\nconst cell2 =\n  sum <= 1 - strict + EPS &&\n  transition >= strict - EPS &&\n  (sum * sum - 1) * c * c + b * c - b * b <= -strict + EPS;\nconst cell3 =\n  sum >= 1 + strict - EPS &&\n  c <= 0.5 - strict + EPS &&\n  (a * a - 1) * c * c + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= -strict + EPS;\n\nreturn cell1 || cell2 || cell3;",
+  "strictCheckEnabled": true,
+  "strictEps": 0.0008,
+  "strictEpsUpperBound": 0.001
+}

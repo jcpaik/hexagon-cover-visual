@@ -29,7 +29,7 @@ export function setupInteraction(
   canvas: HTMLCanvasElement,
   state: TriangleState,
   getShapeMode: () => ShapeMode,
-  getGammas: () => number[],
+  getLocalCMaxima: () => number[],
   getLocalCs: () => number[],
   onLocalCChange: (index: number, value: number) => void,
   render: () => void,
@@ -106,8 +106,8 @@ export function setupInteraction(
     let bestDistance = Infinity;
 
     for (let i = 0; i < 6; i++) {
-      const gamma = Math.max(0, Math.min(1, getGammas()[i] ?? 0));
-      const boundary = localCPoint(i, 1 - gamma);
+      const maxLocalC = Math.max(0, Math.min(1, getLocalCMaxima()[i] ?? 0));
+      const boundary = localCPoint(i, maxLocalC);
       const vertex = HEXAGON_VERTICES[i];
       const rayDistance = distanceToSegment(mouse, boundary, vertex);
       if (rayDistance > maxDistance || rayDistance >= bestDistance) {
@@ -121,11 +121,11 @@ export function setupInteraction(
   }
 
   function projectLocalC(mouse: Point, index: number): number {
-    const gamma = Math.max(0, Math.min(1, getGammas()[index] ?? 0));
-    const boundary = localCPoint(index, 1 - gamma);
+    const maxLocalC = Math.max(0, Math.min(1, getLocalCMaxima()[index] ?? 0));
+    const boundary = localCPoint(index, maxLocalC);
     const vertex = HEXAGON_VERTICES[index];
     const closest = closestPointOnSegment(mouse, boundary, vertex);
-    return Math.max(0, Math.min(1 - gamma, distance(closest, vertex)));
+    return Math.max(0, Math.min(maxLocalC, distance(closest, vertex)));
   }
 
   function getHalfDiagonalHoverIndex(mouse: Point, pointerType: string): number | null {

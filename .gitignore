@@ -1,4 +1,8 @@
-node_modules
-dist
-.vite
+node_modules/
+dist/
+.vite/
+
+# macOS / editor noise
 .DS_Store
+*.swp
+*.swo
