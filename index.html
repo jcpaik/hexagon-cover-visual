@@ -66,6 +66,26 @@
           </label>
           <div class="readout" id="cover-overlay-status">cover overlay off</div>
         </div>
+        <div id="ce-panel">
+          <div class="readout" id="ce-status">CE: not detected</div>
+          <div id="ce-controls">
+            <label for="ce-interval-select">
+              interval
+              <select id="ce-interval-select">
+                <option value="0">AB</option>
+                <option value="1">CD</option>
+              </select>
+            </label>
+            <label for="ce-direction-select">
+              direction
+              <select id="ce-direction-select">
+                <option value="ccw">counterclockwise</option>
+                <option value="cw">clockwise</option>
+              </select>
+            </label>
+          </div>
+          <div class="readout" id="ce-chain-status">CE chain inactive</div>
+        </div>
         <canvas id="canvas" width="600" height="600"></canvas>
         <div class="readout" id="gamma-values">
           γ = (0.000, 0.000, 0.000, 0.000, 0.000, 0.000)

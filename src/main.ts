@@ -14,10 +14,23 @@ import {
   setStrictCheckEnabled,
   setStrictEps,
 } from './maps';
-import { drawControlPoint, drawShape, getInnerGammas } from './triangle';
+import {
+  drawControlPoint,
+  drawShape,
+  getCPerimeterIntersections,
+  getInnerGammas,
+  type CPerimeterIntersections,
+  type PerimeterIntersectionInterval,
+} from './triangle';
 import { setupInteraction } from './interaction';
 import { createRegionRenderer, type GraphMode } from './region';
-import { computeCoverResult, type CoverResult, type CoverSegmentReport, type CoverTriangle } from './cover';
+import {
+  computeCoverResult,
+  type CoverChainDirection,
+  type CoverResult,
+  type CoverSegmentReport,
+  type CoverTriangle,
+} from './cover';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -51,6 +64,11 @@ const strictEpsMaxInput = document.getElementById('strict-eps-max-input') as HTM
 const coverOverlayToggle = document.getElementById('cover-overlay-toggle') as HTMLInputElement;
 const coverOverlayToggleRow = document.getElementById('cover-overlay-toggle-row') as HTMLLabelElement;
 const coverOverlayStatus = document.getElementById('cover-overlay-status') as HTMLDivElement;
+const ceStatus = document.getElementById('ce-status') as HTMLDivElement;
+const ceControls = document.getElementById('ce-controls') as HTMLDivElement;
+const ceIntervalSelect = document.getElementById('ce-interval-select') as HTMLSelectElement;
+const ceDirectionSelect = document.getElementById('ce-direction-select') as HTMLSelectElement;
+const ceChainStatus = document.getElementById('ce-chain-status') as HTMLDivElement;
 
 const triangleState: TriangleState = {
   position: { x: 0, y: 0 },
@@ -68,6 +86,8 @@ let hoveredHalfDiagonalIndex: number | null = null;
 let selectedHalfDiagonalIndices: number[] = [];
 let strictEpsUpperBound = DEFAULT_STRICT_EPS_UPPER_BOUND;
 let showCoverOverlay = false;
+let ceDirection: CoverChainDirection = 'ccw';
+let ce2SelectedIntervalIndex = 0;
 
 interface ControllerSnapshot {
   version: 2;
@@ -83,6 +103,8 @@ interface ControllerSnapshot {
   strictEps: number;
   strictEpsUpperBound: number;
   showCoverOverlay: boolean;
+  ceDirection: CoverChainDirection;
+  ce2SelectedIntervalIndex: number;
 }
 
 type RawControllerSnapshot = Omit<Partial<ControllerSnapshot>, 'version'> & { version?: 1 | 2 };
@@ -148,6 +170,19 @@ function edgePoint(index: number, value: number): { x: number; y: number } {
   };
 }
 
+function nextEdgePoint(index: number, value: number): Point {
+  const current = HEXAGON_VERTICES[index];
+  const next = HEXAGON_VERTICES[(index + 1) % 6];
+  return {
+    x: current.x + value * (next.x - current.x),
+    y: current.y + value * (next.y - current.y),
+  };
+}
+
+function canonicalEdgePoint(edgeIndex: number, value: number): Point {
+  return nextEdgePoint(edgeIndex, value);
+}
+
 function segmentPoint(start: Point, end: Point, value: number): Point {
   return {
     x: start.x + value * (end.x - start.x),
@@ -155,19 +190,130 @@ function segmentPoint(start: Point, end: Point, value: number): Point {
   };
 }
 
-function drawPropagationMarkers(ctx2d: CanvasRenderingContext2D, chain: number[]): void {
+interface ChainDescriptor {
+  activeCe: boolean;
+  direction: CoverChainDirection;
+  vertexOrder: number[];
+  localCs: number[];
+  start: number;
+  target: number | null;
+  values: number[];
+  finalValue: number;
+  passes: boolean | null;
+  selectedInterval: PerimeterIntersectionInterval | null;
+}
+
+function drawPropagationMarkers(ctx2d: CanvasRenderingContext2D, chain: ChainDescriptor): void {
   for (let i = 0; i < 6; i++) {
-    const point = edgePoint(i, chain[i]);
+    const vertexIndex = chain.vertexOrder[i] ?? i;
+    const point = chain.direction === 'ccw'
+      ? edgePoint(vertexIndex, chain.values[i])
+      : nextEdgePoint(vertexIndex, chain.values[i]);
     drawMarker(ctx2d, point.x, point.y, i === 0 ? '#ea580c' : '#0f172a');
   }
 
-  const finalPoint = edgePoint(0, chain[6]);
+  const finalVertexIndex = chain.vertexOrder[0] ?? 0;
+  const finalPoint = chain.activeCe && chain.selectedInterval !== null
+    ? (
+        chain.direction === 'ccw'
+          ? edgePoint(finalVertexIndex, chain.values[6])
+          : nextEdgePoint(finalVertexIndex, chain.values[6])
+      )
+    : edgePoint(0, chain.values[6]);
   drawMarker(ctx2d, finalPoint.x, finalPoint.y, '#fff', '#dc2626');
 }
 
 function getLocalCMaxima(gammas: number[]): number[] {
   const strict = getEffectiveStrictEps();
   return gammas.map((gamma) => clamp01(1 + strict - gamma));
+}
+
+function positiveMod(value: number, modulus: number): number {
+  return ((value % modulus) + modulus) % modulus;
+}
+
+function getDirectionalOrder(interval: PerimeterIntersectionInterval, direction: CoverChainDirection): number[] {
+  if (direction === 'ccw') {
+    const start = (interval.edgeIndex + 1) % 6;
+    return Array.from({ length: 6 }, (_, offset) => (start + offset) % 6);
+  }
+
+  return Array.from({ length: 6 }, (_, offset) => positiveMod(interval.edgeIndex - offset, 6));
+}
+
+function getCeStartAndTarget(
+  interval: PerimeterIntersectionInterval,
+  direction: CoverChainDirection,
+): { start: number; target: number } {
+  if (direction === 'ccw') {
+    return {
+      start: clamp01(1 - interval.end),
+      target: clamp01(1 - interval.start),
+    };
+  }
+
+  return {
+    start: clamp01(interval.start),
+    target: clamp01(interval.end),
+  };
+}
+
+function getSelectedCeInterval(ce: CPerimeterIntersections): PerimeterIntersectionInterval | null {
+  if (ce.kind === 'CE1') {
+    return ce.intervals[0] ?? null;
+  }
+  if (ce.kind !== 'CE2') {
+    return null;
+  }
+
+  if (ce2SelectedIntervalIndex >= ce.intervals.length) {
+    ce2SelectedIntervalIndex = 0;
+    ceIntervalSelect.value = '0';
+  }
+
+  return ce.intervals[ce2SelectedIntervalIndex] ?? ce.intervals[0] ?? null;
+}
+
+function buildChainDescriptor(
+  localCs: number[],
+  ce: CPerimeterIntersections | null,
+): ChainDescriptor {
+  const selectedInterval = ce === null ? null : getSelectedCeInterval(ce);
+
+  if (selectedInterval === null) {
+    const values = computeChainValuesForLocalCs(localCs, startValue);
+    return {
+      activeCe: false,
+      direction: 'ccw',
+      vertexOrder: [0, 1, 2, 3, 4, 5],
+      localCs,
+      start: startValue,
+      target: null,
+      values,
+      finalValue: values[values.length - 1] ?? startValue,
+      passes: null,
+      selectedInterval: null,
+    };
+  }
+
+  const vertexOrder = getDirectionalOrder(selectedInterval, ceDirection);
+  const orderedLocalCs = vertexOrder.map((index) => localCs[index] ?? 0);
+  const { start, target } = getCeStartAndTarget(selectedInterval, ceDirection);
+  const values = computeChainValuesForLocalCs(orderedLocalCs, start);
+  const finalValue = values[values.length - 1] ?? start;
+
+  return {
+    activeCe: true,
+    direction: ceDirection,
+    vertexOrder,
+    localCs: orderedLocalCs,
+    start,
+    target,
+    values,
+    finalValue,
+    passes: finalValue <= target + 1e-6,
+    selectedInterval,
+  };
 }
 
 function clampToLocalCMax(value: number, maxValue: number): number {
@@ -222,6 +368,10 @@ function isGraphMode(value: unknown): value is GraphMode {
   return value === 'composition' || value === 'single' || value === 'pair';
 }
 
+function isCeDirection(value: unknown): value is CoverChainDirection {
+  return value === 'ccw' || value === 'cw';
+}
+
 function formatControllerSnapshot(snapshot: ControllerSnapshot): string {
   return JSON.stringify(snapshot, null, 2);
 }
@@ -250,6 +400,8 @@ function getControllerSnapshot(): ControllerSnapshot {
     strictEps: getStrictEps(),
     strictEpsUpperBound,
     showCoverOverlay,
+    ceDirection,
+    ce2SelectedIntervalIndex,
   };
 }
 
@@ -319,6 +471,20 @@ function parseControllerSnapshot(raw: string): ControllerSnapshot {
   if ('showCoverOverlay' in parsed && typeof parsed.showCoverOverlay !== 'boolean') {
     throw new Error('Invalid showCoverOverlay.');
   }
+  if ('ceDirection' in parsed && !isCeDirection(parsed.ceDirection)) {
+    throw new Error('Invalid ceDirection.');
+  }
+  if (
+    'ce2SelectedIntervalIndex' in parsed
+    && (
+      typeof parsed.ce2SelectedIntervalIndex !== 'number'
+      || !Number.isInteger(parsed.ce2SelectedIntervalIndex)
+      || parsed.ce2SelectedIntervalIndex < 0
+      || parsed.ce2SelectedIntervalIndex > 1
+    )
+  ) {
+    throw new Error('Invalid ce2SelectedIntervalIndex.');
+  }
 
   const parsedStrictEpsUpperBound = clampStrictEpsUpperBound(
     parsed.strictEpsUpperBound ?? DEFAULT_STRICT_EPS_UPPER_BOUND,
@@ -342,6 +508,8 @@ function parseControllerSnapshot(raw: string): ControllerSnapshot {
     strictEps: clampStrictEpsValue(parsed.strictEps ?? 0, parsedStrictEpsUpperBound),
     strictEpsUpperBound: parsedStrictEpsUpperBound,
     showCoverOverlay: parsed.showCoverOverlay ?? false,
+    ceDirection: parsed.ceDirection ?? 'ccw',
+    ce2SelectedIntervalIndex: parsed.ce2SelectedIntervalIndex ?? 0,
   };
 }
 
@@ -366,6 +534,10 @@ function loadControllerSnapshot(raw: string): void {
   admissibleEditor.value = snapshot.admissibleSource;
   strictEpsUpperBound = snapshot.strictEpsUpperBound;
   showCoverOverlay = snapshot.showCoverOverlay;
+  ceDirection = snapshot.ceDirection;
+  ce2SelectedIntervalIndex = snapshot.ce2SelectedIntervalIndex;
+  ceDirectionSelect.value = ceDirection;
+  ceIntervalSelect.value = ce2SelectedIntervalIndex.toString();
   setStrictCheckEnabled(snapshot.strictCheckEnabled);
   setStrictEps(snapshot.strictEps);
   syncStrictCheckControls();
@@ -510,6 +682,82 @@ function drawCoverageGaps(ctx2d: CanvasRenderingContext2D, segments: CoverSegmen
   ctx2d.restore();
 }
 
+function drawCeIntervals(
+  ctx2d: CanvasRenderingContext2D,
+  intervals: PerimeterIntersectionInterval[],
+  selectedInterval: PerimeterIntersectionInterval | null,
+): void {
+  if (intervals.length === 0) {
+    return;
+  }
+
+  ctx2d.save();
+  ctx2d.lineCap = 'round';
+  ctx2d.font = '13px monospace';
+
+  intervals.forEach((interval, index) => {
+    const isSelected = selectedInterval === interval;
+    const start = mathToCanvas(canonicalEdgePoint(interval.edgeIndex, interval.start));
+    const end = mathToCanvas(canonicalEdgePoint(interval.edgeIndex, interval.end));
+    const labelPoint = mathToCanvas(canonicalEdgePoint(interval.edgeIndex, (interval.start + interval.end) / 2));
+
+    ctx2d.beginPath();
+    ctx2d.moveTo(start.x, start.y);
+    ctx2d.lineTo(end.x, end.y);
+    ctx2d.strokeStyle = isSelected ? '#2563eb' : '#38bdf8';
+    ctx2d.lineWidth = isSelected ? 7 : 5;
+    ctx2d.stroke();
+
+    ctx2d.fillStyle = isSelected ? '#1d4ed8' : '#0369a1';
+    ctx2d.fillText(index === 0 ? 'AB' : 'CD', labelPoint.x + 5, labelPoint.y - 5);
+  });
+
+  ctx2d.restore();
+}
+
+function formatInterval(interval: PerimeterIntersectionInterval, label: string): string {
+  return `${label}: e${interval.edgeIndex} [${interval.start.toFixed(3)}, ${interval.end.toFixed(3)}]`;
+}
+
+function summarizeCe(ce: CPerimeterIntersections | null): string {
+  if (ce === null) {
+    return 'CE: triangle mode only';
+  }
+
+  if (ce.kind === 'unsupported') {
+    return `CE: unsupported (${ce.reason ?? 'degenerate position'})`;
+  }
+
+  if (ce.intervals.length === 0) {
+    return 'CE0: no perimeter interval';
+  }
+
+  return `${ce.kind}: ${ce.intervals.map((interval, index) =>
+    formatInterval(interval, index === 0 ? 'AB' : 'CD'),
+  ).join('; ')}`;
+}
+
+function summarizeCeChain(chain: ChainDescriptor): string {
+  if (!chain.activeCe || chain.target === null || chain.passes === null) {
+    return 'CE chain inactive';
+  }
+
+  const status = chain.passes ? 'PASS' : 'FAIL';
+  const order = chain.vertexOrder.map((index) => `V${index}`).join(' -> ');
+  return `${status}: ${chain.direction}; start ${chain.start.toFixed(3)} -> ${chain.finalValue.toFixed(3)} <= target ${chain.target.toFixed(3)}; ${order}`;
+}
+
+function syncCeControls(ce: CPerimeterIntersections | null): void {
+  const active = shapeMode === 'triangle' && ce !== null && (ce.kind === 'CE1' || ce.kind === 'CE2');
+  ceControls.hidden = !active;
+  ceIntervalSelect.hidden = ce?.kind !== 'CE2';
+  ceIntervalSelect.parentElement!.hidden = ce?.kind !== 'CE2';
+  ceDirectionSelect.disabled = !active;
+  ceIntervalSelect.disabled = ce?.kind !== 'CE2';
+  ceDirectionSelect.value = ceDirection;
+  ceIntervalSelect.value = ce2SelectedIntervalIndex.toString();
+}
+
 function summarizeCoverResult(result: CoverResult): string {
   const gapSegments = result.segments
     .filter((segment) => segment.gaps.length > 0)
@@ -625,9 +873,19 @@ function render(): void {
     localCs = maxima;
   }
   currentLocalCMaxima = maxima.slice();
+  const ce = shapeMode === 'triangle' ? getCPerimeterIntersections(triangleState) : null;
+  const chain = buildChainDescriptor(localCs, ce);
   const coverResult = shapeMode === 'triangle' && showCoverOverlay
-    ? computeCoverResult(triangleState, localCs, startValue, strict)
+    ? computeCoverResult(
+        triangleState,
+        chain.localCs,
+        chain.start,
+        strict,
+        chain.vertexOrder,
+        chain.direction,
+      )
     : null;
+  syncCeControls(ce);
 
   ctx.clearRect(0, 0, config.canvasSize, config.canvasSize);
   drawHexagon(ctx);
@@ -639,9 +897,9 @@ function render(): void {
   drawShape(ctx, triangleState, shapeMode);
   if (shapeMode === 'triangle') {
     drawControlPoint(ctx, triangleState);
+    drawCeIntervals(ctx, ce?.intervals ?? [], chain.selectedInterval);
   }
 
-  const chain = computeChainValuesForLocalCs(localCs, startValue);
   if (shapeMode === 'local-c') {
     gammaValues.textContent = 'manual c_i mode';
     localCBounds.textContent = `max c = ${formatTuple(maxima)}`;
@@ -654,6 +912,10 @@ function render(): void {
       : `1 - γ = ${formatTuple(maxima)}`;
     localCValues.textContent = `c = ${formatTuple(localCs)}`;
   }
+  ceStatus.textContent = summarizeCe(ce);
+  ceStatus.style.color = ce?.kind === 'unsupported' ? '#b91c1c' : '#475569';
+  ceChainStatus.textContent = summarizeCeChain(chain);
+  ceChainStatus.style.color = chain.passes === null ? '#475569' : chain.passes ? '#047857' : '#b91c1c';
   drawPropagationMarkers(ctx, chain);
   if (coverResult) {
     drawCoverageGaps(ctx, coverResult.segments);
@@ -671,9 +933,9 @@ function render(): void {
 
   regionRenderer.setMode(graphMode);
   regionRenderer.setSingleParameter(parseFloat(cSlider.value));
-  regionRenderer.setLocalCs(localCs);
+  regionRenderer.setLocalCs(chain.localCs);
   regionRenderer.setSelectedLocalCs(selectedHalfDiagonalIndices.map((index) => localCs[index] ?? 0));
-  regionRenderer.setStartValue(startValue);
+  regionRenderer.setStartValue(chain.start);
   regionRenderer.setHoverLocalC(
     hoveredHalfDiagonalIndex === null ? null : localCs[hoveredHalfDiagonalIndex] ?? null,
   );
@@ -716,6 +978,18 @@ strictEpsMaxInput.addEventListener('change', () => {
 coverOverlayToggle.addEventListener('change', () => {
   showCoverOverlay = coverOverlayToggle.checked && shapeMode === 'triangle';
   syncModeButtons();
+  render();
+});
+
+ceDirectionSelect.addEventListener('change', () => {
+  if (isCeDirection(ceDirectionSelect.value)) {
+    ceDirection = ceDirectionSelect.value;
+    render();
+  }
+});
+
+ceIntervalSelect.addEventListener('change', () => {
+  ce2SelectedIntervalIndex = ceIntervalSelect.value === '1' ? 1 : 0;
   render();
 });
 

@@ -86,6 +86,36 @@ canvas {
   padding: 8px;
 }
 
+#ce-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  padding: 8px;
+}
+
+#ce-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-family: monospace;
+  font-size: 12px;
+  color: #334155;
+}
+
+#ce-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#ce-controls select {
+  font: inherit;
+  max-width: 170px;
+}
+
 #strict-check-toggle-row {
   display: flex;
   align-items: center;
