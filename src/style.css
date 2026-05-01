@@ -116,6 +116,20 @@ canvas {
   max-width: 170px;
 }
 
+#ce-start-reset {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+#ce-start-reset:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 #strict-check-toggle-row {
   display: flex;
   align-items: center;

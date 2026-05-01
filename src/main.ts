@@ -68,6 +68,7 @@ const ceStatus = document.getElementById('ce-status') as HTMLDivElement;
 const ceControls = document.getElementById('ce-controls') as HTMLDivElement;
 const ceIntervalSelect = document.getElementById('ce-interval-select') as HTMLSelectElement;
 const ceDirectionSelect = document.getElementById('ce-direction-select') as HTMLSelectElement;
+const ceStartResetButton = document.getElementById('ce-start-reset') as HTMLButtonElement;
 const ceChainStatus = document.getElementById('ce-chain-status') as HTMLDivElement;
 
 const triangleState: TriangleState = {
@@ -88,9 +89,11 @@ let strictEpsUpperBound = DEFAULT_STRICT_EPS_UPPER_BOUND;
 let showCoverOverlay = false;
 let ceDirection: CoverChainDirection = 'ccw';
 let ce2SelectedIntervalIndex = 0;
+let ceStartOverrides: Record<string, number> = {};
+let currentChain: ChainDescriptor | null = null;
 
 interface ControllerSnapshot {
-  version: 2;
+  version: 3;
   shapeMode: ShapeMode;
   graphMode: GraphMode;
   startValue: number;
@@ -105,9 +108,10 @@ interface ControllerSnapshot {
   showCoverOverlay: boolean;
   ceDirection: CoverChainDirection;
   ce2SelectedIntervalIndex: number;
+  ceStartOverrides: Record<string, number>;
 }
 
-type RawControllerSnapshot = Omit<Partial<ControllerSnapshot>, 'version'> & { version?: 1 | 2 };
+type RawControllerSnapshot = Omit<Partial<ControllerSnapshot>, 'version'> & { version?: 1 | 2 | 3 };
 
 function getResponsiveCanvasSize(target: HTMLCanvasElement): number {
   const rect = target.getBoundingClientRect();
@@ -196,6 +200,8 @@ interface ChainDescriptor {
   vertexOrder: number[];
   localCs: number[];
   start: number;
+  defaultStart: number;
+  ceStartKey: string | null;
   target: number | null;
   values: number[];
   finalValue: number;
@@ -258,6 +264,38 @@ function getCeStartAndTarget(
   };
 }
 
+function getCeIntervalSlot(ce: CPerimeterIntersections): number | null {
+  if (ce.kind === 'CE1') {
+    return 0;
+  }
+  if (ce.kind === 'CE2') {
+    return ce2SelectedIntervalIndex;
+  }
+  return null;
+}
+
+function getCeStartKey(
+  interval: PerimeterIntersectionInterval,
+  direction: CoverChainDirection,
+  slot: number,
+): string {
+  return `${direction}:e${interval.edgeIndex}:i${slot}`;
+}
+
+function sanitizeCeStartOverrides(input: unknown): Record<string, number> {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return {};
+  }
+
+  const output: Record<string, number> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      output[key] = clamp01(value);
+    }
+  }
+  return output;
+}
+
 function getSelectedCeInterval(ce: CPerimeterIntersections): PerimeterIntersectionInterval | null {
   if (ce.kind === 'CE1') {
     return ce.intervals[0] ?? null;
@@ -279,8 +317,9 @@ function buildChainDescriptor(
   ce: CPerimeterIntersections | null,
 ): ChainDescriptor {
   const selectedInterval = ce === null ? null : getSelectedCeInterval(ce);
+  const intervalSlot = ce === null ? null : getCeIntervalSlot(ce);
 
-  if (selectedInterval === null) {
+  if (selectedInterval === null || intervalSlot === null) {
     const values = computeChainValuesForLocalCs(localCs, startValue);
     return {
       activeCe: false,
@@ -288,6 +327,8 @@ function buildChainDescriptor(
       vertexOrder: [0, 1, 2, 3, 4, 5],
       localCs,
       start: startValue,
+      defaultStart: startValue,
+      ceStartKey: null,
       target: null,
       values,
       finalValue: values[values.length - 1] ?? startValue,
@@ -298,7 +339,9 @@ function buildChainDescriptor(
 
   const vertexOrder = getDirectionalOrder(selectedInterval, ceDirection);
   const orderedLocalCs = vertexOrder.map((index) => localCs[index] ?? 0);
-  const { start, target } = getCeStartAndTarget(selectedInterval, ceDirection);
+  const { start: defaultStart, target } = getCeStartAndTarget(selectedInterval, ceDirection);
+  const ceStartKey = getCeStartKey(selectedInterval, ceDirection, intervalSlot);
+  const start = ceStartOverrides[ceStartKey] ?? defaultStart;
   const values = computeChainValuesForLocalCs(orderedLocalCs, start);
   const finalValue = values[values.length - 1] ?? start;
 
@@ -308,6 +351,8 @@ function buildChainDescriptor(
     vertexOrder,
     localCs: orderedLocalCs,
     start,
+    defaultStart,
+    ceStartKey,
     target,
     values,
     finalValue,
@@ -383,7 +428,7 @@ function setControllerStateStatus(text: string, isError = false): void {
 
 function getControllerSnapshot(): ControllerSnapshot {
   return {
-    version: 2,
+    version: 3,
     shapeMode,
     graphMode,
     startValue: clamp01(startValue),
@@ -402,6 +447,7 @@ function getControllerSnapshot(): ControllerSnapshot {
     showCoverOverlay,
     ceDirection,
     ce2SelectedIntervalIndex,
+    ceStartOverrides: sanitizeCeStartOverrides(ceStartOverrides),
   };
 }
 
@@ -413,7 +459,7 @@ function syncControllerSnapshot(): void {
 function parseControllerSnapshot(raw: string): ControllerSnapshot {
   const parsed = JSON.parse(raw) as RawControllerSnapshot;
 
-  if (parsed.version !== 1 && parsed.version !== 2) {
+  if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) {
     throw new Error('Unsupported snapshot version.');
   }
   if (!isShapeMode(parsed.shapeMode)) {
@@ -485,13 +531,23 @@ function parseControllerSnapshot(raw: string): ControllerSnapshot {
   ) {
     throw new Error('Invalid ce2SelectedIntervalIndex.');
   }
+  if (
+    'ceStartOverrides' in parsed
+    && (
+      typeof parsed.ceStartOverrides !== 'object'
+      || parsed.ceStartOverrides === null
+      || Array.isArray(parsed.ceStartOverrides)
+    )
+  ) {
+    throw new Error('Invalid ceStartOverrides.');
+  }
 
   const parsedStrictEpsUpperBound = clampStrictEpsUpperBound(
     parsed.strictEpsUpperBound ?? DEFAULT_STRICT_EPS_UPPER_BOUND,
   );
 
   return {
-    version: 2,
+    version: 3,
     shapeMode: parsed.shapeMode,
     graphMode: parsed.graphMode,
     startValue: clamp01(parsed.startValue),
@@ -510,6 +566,7 @@ function parseControllerSnapshot(raw: string): ControllerSnapshot {
     showCoverOverlay: parsed.showCoverOverlay ?? false,
     ceDirection: parsed.ceDirection ?? 'ccw',
     ce2SelectedIntervalIndex: parsed.ce2SelectedIntervalIndex ?? 0,
+    ceStartOverrides: sanitizeCeStartOverrides(parsed.ceStartOverrides),
   };
 }
 
@@ -536,6 +593,7 @@ function loadControllerSnapshot(raw: string): void {
   showCoverOverlay = snapshot.showCoverOverlay;
   ceDirection = snapshot.ceDirection;
   ce2SelectedIntervalIndex = snapshot.ce2SelectedIntervalIndex;
+  ceStartOverrides = { ...snapshot.ceStartOverrides };
   ceDirectionSelect.value = ceDirection;
   ceIntervalSelect.value = ce2SelectedIntervalIndex.toString();
   setStrictCheckEnabled(snapshot.strictCheckEnabled);
@@ -787,8 +845,50 @@ function syncCeControls(ce: CPerimeterIntersections | null): void {
   ceIntervalSelect.parentElement!.hidden = ce?.kind !== 'CE2';
   ceDirectionSelect.disabled = !active;
   ceIntervalSelect.disabled = ce?.kind !== 'CE2';
+  ceStartResetButton.disabled = !active;
   ceDirectionSelect.value = ceDirection;
   ceIntervalSelect.value = ce2SelectedIntervalIndex.toString();
+}
+
+function getCurrentStartValueSegment(): { start: Point; end: Point } {
+  const chain = currentChain;
+  if (chain?.activeCe && chain.selectedInterval !== null) {
+    const vertexIndex = chain.vertexOrder[0] ?? 0;
+    const current = HEXAGON_VERTICES[vertexIndex];
+    const adjacent = chain.direction === 'ccw'
+      ? HEXAGON_VERTICES[(vertexIndex + 5) % 6]
+      : HEXAGON_VERTICES[(vertexIndex + 1) % 6];
+    return { start: current, end: adjacent };
+  }
+
+  return {
+    start: HEXAGON_VERTICES[0],
+    end: HEXAGON_VERTICES[5],
+  };
+}
+
+function setCurrentStartValue(value: number): void {
+  const chain = currentChain;
+  if (chain?.activeCe && chain.ceStartKey !== null) {
+    ceStartOverrides = {
+      ...ceStartOverrides,
+      [chain.ceStartKey]: clamp01(value),
+    };
+    return;
+  }
+
+  startValue = clamp01(value);
+}
+
+function resetCurrentCeStart(): void {
+  const key = currentChain?.ceStartKey;
+  if (!key) {
+    return;
+  }
+
+  const { [key]: _removed, ...remaining } = ceStartOverrides;
+  ceStartOverrides = remaining;
+  render();
 }
 
 function summarizeCoverResult(result: CoverResult): string {
@@ -908,6 +1008,7 @@ function render(): void {
   currentLocalCMaxima = maxima.slice();
   const ce = shapeMode === 'triangle' ? getCPerimeterIntersections(triangleState) : null;
   const chain = buildChainDescriptor(localCs, ce);
+  currentChain = chain;
   const coverResult = shapeMode === 'triangle' && showCoverOverlay
     ? computeCoverResult(
         triangleState,
@@ -1032,6 +1133,8 @@ ceIntervalSelect.addEventListener('change', () => {
   render();
 });
 
+ceStartResetButton.addEventListener('click', resetCurrentCeStart);
+
 cValueLabel.textContent = parseFloat(cSlider.value).toFixed(2);
 admissibleEditor.value = getAdmissibleOrderedSource();
 syncStrictCheckControls();
@@ -1110,8 +1213,9 @@ setupInteraction(
   },
   render,
   (value) => {
-    startValue = value;
+    setCurrentStartValue(value);
   },
+  getCurrentStartValueSegment,
   (index) => {
     if (hoveredHalfDiagonalIndex === index) {
       return;

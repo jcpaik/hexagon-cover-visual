@@ -25,6 +25,11 @@ const CLICK_CANCEL_DISTANCE_PX = 6;
 const PEN_HIT_SCALE = 1.35;
 const TOUCH_HIT_SCALE = 1.75;
 
+export interface StartValueSegment {
+  start: Point;
+  end: Point;
+}
+
 export function setupInteraction(
   canvas: HTMLCanvasElement,
   state: TriangleState,
@@ -34,6 +39,7 @@ export function setupInteraction(
   onLocalCChange: (index: number, value: number) => void,
   render: () => void,
   onStartValueSelect?: (value: number) => void,
+  getStartValueSegment?: () => StartValueSegment | null,
   onHalfDiagonalHover?: (index: number | null) => void,
   onHalfDiagonalToggle?: (index: number) => void,
 ): void {
@@ -179,27 +185,32 @@ export function setupInteraction(
     return { kind: 'none' };
   }
 
+  function getActiveStartValueSegment(): StartValueSegment {
+    return getStartValueSegment?.() ?? {
+      start: HEXAGON_VERTICES[0],
+      end: HEXAGON_VERTICES[5],
+    };
+  }
+
   function projectStartValue(mouse: Point): number {
-    const start = HEXAGON_VERTICES[5];
-    const end = HEXAGON_VERTICES[0];
+    const { start, end } = getActiveStartValueSegment();
     const closest = closestPointOnSegment(mouse, start, end);
     const edge = {
-      x: start.x - end.x,
-      y: start.y - end.y,
+      x: end.x - start.x,
+      y: end.y - start.y,
     };
     const edgeLen2 = edge.x * edge.x + edge.y * edge.y;
     if (edgeLen2 === 0) return 0;
 
-    const dx = closest.x - end.x;
-    const dy = closest.y - end.y;
+    const dx = closest.x - start.x;
+    const dy = closest.y - start.y;
     return Math.max(0, Math.min(1, (dx * edge.x + dy * edge.y) / edgeLen2));
   }
 
   function getStartValueFromMouse(mouse: Point, pointerType: string): number | null {
     if (!onStartValueSelect) return null;
 
-    const start = HEXAGON_VERTICES[5];
-    const end = HEXAGON_VERTICES[0];
+    const { start, end } = getActiveStartValueSegment();
     const hitDistance = distanceToSegment(mouse, start, end);
     if (hitDistance > scaleToMath(START_EDGE_HIT_PX * getHitScale(pointerType))) return null;
 
