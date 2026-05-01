@@ -77,7 +77,26 @@ canvas {
   padding: 8px;
 }
 
+#cover-overlay-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  padding: 8px;
+}
+
 #strict-check-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: monospace;
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+}
+
+#cover-overlay-toggle-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -89,6 +108,15 @@ canvas {
 
 #strict-check-toggle-row input {
   margin: 0;
+}
+
+#cover-overlay-toggle-row input {
+  margin: 0;
+}
+
+#cover-overlay-toggle-row.is-disabled {
+  color: #94a3b8;
+  cursor: default;
 }
 
 #strict-eps-controls {

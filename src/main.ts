@@ -17,6 +17,7 @@ import {
 import { drawControlPoint, drawShape, getInnerGammas } from './triangle';
 import { setupInteraction } from './interaction';
 import { createRegionRenderer, type GraphMode } from './region';
+import { computeCoverResult, type CoverResult, type CoverSegmentReport, type CoverTriangle } from './cover';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -47,6 +48,9 @@ const strictEpsSlider = document.getElementById('strict-eps-slider') as HTMLInpu
 const strictEpsValueLabel = document.getElementById('strict-eps-value') as HTMLSpanElement;
 const strictEpsInput = document.getElementById('strict-eps-input') as HTMLInputElement;
 const strictEpsMaxInput = document.getElementById('strict-eps-max-input') as HTMLInputElement;
+const coverOverlayToggle = document.getElementById('cover-overlay-toggle') as HTMLInputElement;
+const coverOverlayToggleRow = document.getElementById('cover-overlay-toggle-row') as HTMLLabelElement;
+const coverOverlayStatus = document.getElementById('cover-overlay-status') as HTMLDivElement;
 
 const triangleState: TriangleState = {
   position: { x: 0, y: 0 },
@@ -63,6 +67,7 @@ let admissibleEditorTimer: number | null = null;
 let hoveredHalfDiagonalIndex: number | null = null;
 let selectedHalfDiagonalIndices: number[] = [];
 let strictEpsUpperBound = DEFAULT_STRICT_EPS_UPPER_BOUND;
+let showCoverOverlay = false;
 
 interface ControllerSnapshot {
   version: 2;
@@ -77,6 +82,7 @@ interface ControllerSnapshot {
   strictCheckEnabled: boolean;
   strictEps: number;
   strictEpsUpperBound: number;
+  showCoverOverlay: boolean;
 }
 
 type RawControllerSnapshot = Omit<Partial<ControllerSnapshot>, 'version'> & { version?: 1 | 2 };
@@ -139,6 +145,13 @@ function edgePoint(index: number, value: number): { x: number; y: number } {
   return {
     x: current.x + value * (previous.x - current.x),
     y: current.y + value * (previous.y - current.y),
+  };
+}
+
+function segmentPoint(start: Point, end: Point, value: number): Point {
+  return {
+    x: start.x + value * (end.x - start.x),
+    y: start.y + value * (end.y - start.y),
   };
 }
 
@@ -236,6 +249,7 @@ function getControllerSnapshot(): ControllerSnapshot {
     strictCheckEnabled: isStrictCheckEnabled(),
     strictEps: getStrictEps(),
     strictEpsUpperBound,
+    showCoverOverlay,
   };
 }
 
@@ -302,6 +316,9 @@ function parseControllerSnapshot(raw: string): ControllerSnapshot {
   ) {
     throw new Error('Invalid strictEpsUpperBound.');
   }
+  if ('showCoverOverlay' in parsed && typeof parsed.showCoverOverlay !== 'boolean') {
+    throw new Error('Invalid showCoverOverlay.');
+  }
 
   const parsedStrictEpsUpperBound = clampStrictEpsUpperBound(
     parsed.strictEpsUpperBound ?? DEFAULT_STRICT_EPS_UPPER_BOUND,
@@ -324,6 +341,7 @@ function parseControllerSnapshot(raw: string): ControllerSnapshot {
     strictCheckEnabled: parsed.strictCheckEnabled ?? false,
     strictEps: clampStrictEpsValue(parsed.strictEps ?? 0, parsedStrictEpsUpperBound),
     strictEpsUpperBound: parsedStrictEpsUpperBound,
+    showCoverOverlay: parsed.showCoverOverlay ?? false,
   };
 }
 
@@ -347,6 +365,7 @@ function loadControllerSnapshot(raw: string): void {
   hoveredHalfDiagonalIndex = null;
   admissibleEditor.value = snapshot.admissibleSource;
   strictEpsUpperBound = snapshot.strictEpsUpperBound;
+  showCoverOverlay = snapshot.showCoverOverlay;
   setStrictCheckEnabled(snapshot.strictCheckEnabled);
   setStrictEps(snapshot.strictEps);
   syncStrictCheckControls();
@@ -441,6 +460,71 @@ function drawSelectedHalfDiagonals(ctx2d: CanvasRenderingContext2D, indices: num
   ctx2d.restore();
 }
 
+function drawCoverTriangleOverlay(ctx2d: CanvasRenderingContext2D, triangles: CoverTriangle[]): void {
+  ctx2d.save();
+  for (const triangle of triangles) {
+    const vertices = triangle.vertices.map(mathToCanvas);
+    ctx2d.beginPath();
+    ctx2d.moveTo(vertices[0].x, vertices[0].y);
+    ctx2d.lineTo(vertices[1].x, vertices[1].y);
+    ctx2d.lineTo(vertices[2].x, vertices[2].y);
+    ctx2d.closePath();
+    ctx2d.fillStyle = `${triangle.color}29`;
+    ctx2d.strokeStyle = triangle.color;
+    ctx2d.lineWidth = 2;
+    ctx2d.fill();
+    ctx2d.stroke();
+
+    const label = mathToCanvas(triangle.center);
+    ctx2d.fillStyle = triangle.side >= 1 - 1e-9 ? '#b91c1c' : triangle.color;
+    ctx2d.font = '13px monospace';
+    ctx2d.fillText(triangle.name, label.x + 6, label.y - 6);
+  }
+  ctx2d.restore();
+}
+
+function drawCoverageGaps(ctx2d: CanvasRenderingContext2D, segments: CoverSegmentReport[]): void {
+  ctx2d.save();
+  ctx2d.strokeStyle = '#dc2626';
+  ctx2d.lineWidth = 5;
+  ctx2d.lineCap = 'round';
+
+  for (const segment of segments) {
+    const start = segment.kind === 'edge'
+      ? HEXAGON_VERTICES[segment.index]
+      : { x: 0, y: 0 };
+    const end = segment.kind === 'edge'
+      ? HEXAGON_VERTICES[(segment.index + 1) % 6]
+      : HEXAGON_VERTICES[segment.index];
+
+    for (const [gapStart, gapEnd] of segment.gaps) {
+      const canvasStart = mathToCanvas(segmentPoint(start, end, gapStart));
+      const canvasEnd = mathToCanvas(segmentPoint(start, end, gapEnd));
+      ctx2d.beginPath();
+      ctx2d.moveTo(canvasStart.x, canvasStart.y);
+      ctx2d.lineTo(canvasEnd.x, canvasEnd.y);
+      ctx2d.stroke();
+    }
+  }
+
+  ctx2d.restore();
+}
+
+function summarizeCoverResult(result: CoverResult): string {
+  const gapSegments = result.segments
+    .filter((segment) => segment.gaps.length > 0)
+    .map((segment) => `${segment.kind} ${segment.index}`);
+  const sizeText = result.tooLargeTriangles.length === 0
+    ? 'perimeter sides < 1'
+    : `perimeter side >= 1: ${result.tooLargeTriangles.join(', ')}`;
+
+  if (gapSegments.length === 0) {
+    return `cover: PASS; ${sizeText}`;
+  }
+
+  return `cover: gaps on ${gapSegments.slice(0, 6).join(', ')}${gapSegments.length > 6 ? ', ...' : ''}; ${sizeText}`;
+}
+
 function toggleSelectedHalfDiagonal(index: number): void {
   const existingIndex = selectedHalfDiagonalIndices.indexOf(index);
   if (existingIndex >= 0) {
@@ -467,6 +551,9 @@ function syncModeButtons(): void {
   }
   sliderRow.hidden = graphMode !== 'single';
   cSlider.disabled = graphMode !== 'single';
+  coverOverlayToggle.disabled = shapeMode !== 'triangle';
+  coverOverlayToggle.checked = showCoverOverlay && shapeMode === 'triangle';
+  coverOverlayToggleRow.classList.toggle('is-disabled', shapeMode !== 'triangle');
 }
 
 function setAdmissibleStatus(text: string, isError = false): void {
@@ -538,9 +625,15 @@ function render(): void {
     localCs = maxima;
   }
   currentLocalCMaxima = maxima.slice();
+  const coverResult = shapeMode === 'triangle' && showCoverOverlay
+    ? computeCoverResult(triangleState, localCs, startValue, strict)
+    : null;
 
   ctx.clearRect(0, 0, config.canvasSize, config.canvasSize);
   drawHexagon(ctx);
+  if (coverResult) {
+    drawCoverTriangleOverlay(ctx, coverResult.vTriangles);
+  }
   drawSelectedHalfDiagonals(ctx, selectedHalfDiagonalIndices);
   drawHoveredHalfDiagonal(ctx, hoveredHalfDiagonalIndex);
   drawShape(ctx, triangleState, shapeMode);
@@ -562,6 +655,19 @@ function render(): void {
     localCValues.textContent = `c = ${formatTuple(localCs)}`;
   }
   drawPropagationMarkers(ctx, chain);
+  if (coverResult) {
+    drawCoverageGaps(ctx, coverResult.segments);
+    coverOverlayStatus.textContent = summarizeCoverResult(coverResult);
+    coverOverlayStatus.style.color = coverResult.coverageOk && coverResult.tooLargeTriangles.length === 0
+      ? '#047857'
+      : '#b91c1c';
+  } else if (shapeMode !== 'triangle') {
+    coverOverlayStatus.textContent = 'cover overlay available in Triangle mode';
+    coverOverlayStatus.style.color = '#64748b';
+  } else {
+    coverOverlayStatus.textContent = 'cover overlay off';
+    coverOverlayStatus.style.color = '#475569';
+  }
 
   regionRenderer.setMode(graphMode);
   regionRenderer.setSingleParameter(parseFloat(cSlider.value));
@@ -604,6 +710,12 @@ strictEpsMaxInput.addEventListener('change', () => {
   strictEpsUpperBound = clampStrictEpsUpperBound(parseFloat(strictEpsMaxInput.value));
   setStrictEps(clampStrictEpsValue(getStrictEps(), strictEpsUpperBound));
   syncStrictCheckControls();
+  render();
+});
+
+coverOverlayToggle.addEventListener('change', () => {
+  showCoverOverlay = coverOverlayToggle.checked && shapeMode === 'triangle';
+  syncModeButtons();
   render();
 });
 
