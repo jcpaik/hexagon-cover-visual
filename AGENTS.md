@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-This is a Vite + TypeScript browser app for exploring a regular hexagon skeleton and the triangle-cover geometry around it. The main UI draws a hexagon skeleton, a central C-triangle or C-circle, derived `gamma` and `c_i` values, map/composition graphs, and an optional live overlay of six perimeter `V_i` triangles with skeleton coverage gaps.
+This is a Vite + TypeScript browser app for exploring a regular hexagon skeleton and the triangle-cover geometry around it. The main UI draws a hexagon skeleton, a central C-triangle or C-circle, derived `gamma` and `c_i` values, map/composition graphs, and an optional live overlay of six perimeter `V_i` triangles with skeleton coverage gaps. In C-triangle mode, the app distinguishes CE0, CE1, and CE2 perimeter-intersection cases; CE1/CE2 expose interval and direction controls that change the six-step `V_i` propagation chain.
 
 The app is static/client-only. There is no backend service.
 
@@ -34,15 +34,15 @@ The app is static/client-only. There is no backend service.
 
 ## Source Files
 
-- `src/main.ts`: main app wiring. Owns UI state, snapshot load/save, event listeners, render orchestration, cover overlay drawing, and communication with the graph renderer.
+- `src/main.ts`: main app wiring. Owns UI state, snapshot load/save, event listeners, render orchestration, CE1/CE2 interval and direction controls, cover overlay drawing, and communication with the graph renderer.
 - `src/style.css`: layout and visual styling for panels, canvases, buttons, editors, readouts, and overlay controls.
 - `src/types.ts`: shared TypeScript types for points, shape modes, triangle state, and pointer interaction state.
 - `src/coords.ts`: math-coordinate to canvas-coordinate transforms and responsive canvas sizing configuration.
 - `src/geometry.ts`: pure geometry helpers: distances, point-in-shape checks, segment projection, clamping, rotation, and ray intersections.
 - `src/hexagon.ts`: regular hexagon vertex constants and drawing of the hexagon boundary plus three main diagonals.
-- `src/triangle.ts`: C-triangle/C-circle geometry, drawing, valid centroid region, control point drawing, and gamma extraction along hexagon rays.
+- `src/triangle.ts`: C-triangle/C-circle geometry, drawing, valid centroid region, control point drawing, gamma extraction along hexagon rays, and C-triangle perimeter-intersection classification as CE0/CE1/CE2.
 - `src/maps.ts`: admissible-set predicate, strict epsilon handling, `g_c`, pair composition, full local-`c` composition, and chain value computation.
-- `src/region.ts`: right-side graph canvas renderer for single `g_c`, pair composition, and full six-step composition.
+- `src/region.ts`: right-side graph canvas renderer for single `g_c`, pair composition, and full six-step composition. In CE1/CE2 states, graph highlight/hover labels should follow the active chain order passed from `src/main.ts`.
 - `src/interaction.ts`: pointer interaction state machine for dragging/moving/rotating the C-shape, editing manual `c_i`, selecting start values, and toggling half-diagonals.
 - `src/cover.ts`: live TypeScript port of the needed counterexample-cover logic. Fits six perimeter `V_i` triangles, computes triangle halfplanes, intersects them with skeleton segments, merges covered intervals, and reports uncovered gaps.
 
@@ -50,5 +50,6 @@ The app is static/client-only. There is no backend service.
 
 - Prefer keeping mathematical helper code pure and isolated in `src/geometry.ts`, `src/maps.ts`, or `src/cover.ts`.
 - UI state and DOM wiring should stay in `src/main.ts`.
+- CE1/CE2 logic depends on the selected perimeter interval and chain direction. When updating graph highlights, selected half-diagonals, or hover labels, preserve the active `vertexOrder` rather than assuming the CE0 order `V0 -> V1 -> ... -> V5`.
 - The Python counterexample generator is a reference implementation for saved artifacts, not runtime website code.
 - If changing geometry or admissible-map behavior, run `npm run build` and manually compare the website against the relevant explanation in `MATH.md`.

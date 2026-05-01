@@ -72,3 +72,19 @@ I mean V1 triangle entierly also covers interval AB,
 and there is too much intersection between V1 triangle and V0 triangle.
 Is this because outer gamma 1 is too large?
 -this is true.
+
+I implemented Ce1 and Ce2 triangle to be able.
+But the map graph just stays the same as Ce0.
+I need to update the map graph to reflect the Ce1 Ce2 cases.
+ask me quesztions give me suggestions
+
+1. only the relevant interval from start to target. visualize how the mapping went
+2. yes
+3. only selected case.
+4. label chains.
+5. only describe six V-triangle propagation.
+6. shown faintly as context
+7. what is single and pair graph modes?
+fix the suggested one possible bug/UX issue
+
+roll back what you just changed. I think previous one is better. but only fix the bug/UX issue.

@@ -719,6 +719,39 @@ function formatInterval(interval: PerimeterIntersectionInterval, label: string):
   return `${label}: e${interval.edgeIndex} [${interval.start.toFixed(3)}, ${interval.end.toFixed(3)}]`;
 }
 
+function getSelectedLocalCsForChain(chain: ChainDescriptor, localCs: number[]): number[] {
+  const selected = new Set(selectedHalfDiagonalIndices);
+  const orderedIndices = chain.activeCe ? chain.vertexOrder : [0, 1, 2, 3, 4, 5];
+  return orderedIndices
+    .filter((index) => selected.has(index))
+    .map((index) => localCs[index] ?? 0);
+}
+
+function getSelectedLocalCsLabel(chain: ChainDescriptor): string {
+  if (selectedHalfDiagonalIndices.length === 0) {
+    return '';
+  }
+
+  const selected = new Set(selectedHalfDiagonalIndices);
+  const orderedIndices = chain.activeCe ? chain.vertexOrder : [0, 1, 2, 3, 4, 5];
+  const labels = orderedIndices
+    .filter((index) => selected.has(index))
+    .map((index) => `V${index}`)
+    .join(' -> ');
+
+  return labels.length === 0 ? '' : `selected ${labels}`;
+}
+
+function getHoverLocalCLabel(chain: ChainDescriptor, index: number, localC: number): string {
+  if (!chain.activeCe) {
+    return `hover V${index}: g_c, c = ${localC.toFixed(3)}`;
+  }
+
+  const chainPosition = chain.vertexOrder.indexOf(index);
+  const suffix = chainPosition < 0 ? '' : `, step ${chainPosition + 1}`;
+  return `hover V${index}${suffix}: g_c, c = ${localC.toFixed(3)}`;
+}
+
 function summarizeCe(ce: CPerimeterIntersections | null): string {
   if (ce === null) {
     return 'CE: triangle mode only';
@@ -934,10 +967,16 @@ function render(): void {
   regionRenderer.setMode(graphMode);
   regionRenderer.setSingleParameter(parseFloat(cSlider.value));
   regionRenderer.setLocalCs(chain.localCs);
-  regionRenderer.setSelectedLocalCs(selectedHalfDiagonalIndices.map((index) => localCs[index] ?? 0));
+  regionRenderer.setSelectedLocalCs(
+    getSelectedLocalCsForChain(chain, localCs),
+    getSelectedLocalCsLabel(chain),
+  );
   regionRenderer.setStartValue(chain.start);
   regionRenderer.setHoverLocalC(
     hoveredHalfDiagonalIndex === null ? null : localCs[hoveredHalfDiagonalIndex] ?? null,
+    hoveredHalfDiagonalIndex === null
+      ? undefined
+      : getHoverLocalCLabel(chain, hoveredHalfDiagonalIndex, localCs[hoveredHalfDiagonalIndex] ?? 0),
   );
   regionRenderer.render();
   syncControllerSnapshot();
