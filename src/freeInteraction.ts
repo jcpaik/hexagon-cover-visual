@@ -35,6 +35,7 @@ export function setupFreeInteraction(
   canvas: HTMLCanvasElement,
   getState: () => FreeState,
   render: () => void,
+  onDragEnd?: () => void,
 ): FreeInteractionApi {
   let enabled = false;
   let dragState: DragState = { kind: 'idle' };
@@ -215,6 +216,7 @@ export function setupFreeInteraction(
       }
       dragState = { kind: 'idle' };
       updateCursor(getPointerMath(e));
+      onDragEnd?.();
     }
   }
 

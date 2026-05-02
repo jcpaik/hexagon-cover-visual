@@ -33,10 +33,12 @@ import {
 } from './cover';
 import {
   allowedMidpointIndices,
+  autoPlaceAllFreeVd0Triangles,
   colorForTriangle,
   createDefaultFreeState,
   describeTarget,
   getSegmentByRef,
+  getFreeVd0Status,
   getTriangle,
   midpoint,
   namedPointLabel,
@@ -53,6 +55,7 @@ import type {
   FreeTarget,
   FreeTool,
   FreeTriangleId,
+  FreeVd0Mode,
   FreeValidationResult,
 } from './freeTypes';
 
@@ -1131,14 +1134,42 @@ function loadFreeSnapshot(raw: string): void {
   if (parsed.version !== 1 || !Array.isArray(parsed.triangles) || parsed.triangles.length !== 7) {
     throw new Error('Invalid free snapshot.');
   }
+  const defaults = createDefaultFreeState();
   freeState = {
-    ...createDefaultFreeState(),
+    ...defaults,
     ...parsed,
+    triangles: parsed.triangles.map((triangle, index) => ({
+      ...defaults.triangles[index],
+      ...triangle,
+      vd0: {
+        ...defaults.triangles[index].vd0,
+        ...triangle.vd0,
+      },
+    })) as FreeState['triangles'],
     labels: Array.isArray(parsed.labels) ? parsed.labels : [],
     selectedSegments: [],
   } as FreeState;
   freeInitializedFromCurrent = true;
   refreshLabels(freeState);
+}
+
+function autoPlaceAllFreeVd0FromControls(): void {
+  if (!freeState.triangles.some((triangle) => triangle.id !== 'C' && triangle.vd0.enabled)) {
+    return;
+  }
+  const result = autoPlaceAllFreeVd0Triangles(freeState);
+  refreshLabels(freeState);
+  const failureText = result.ok ? '' : result.failedIds.map((id) => {
+    const triangle = getTriangle(freeState, id);
+    const status = getFreeVd0Status(freeState, triangle);
+    const maxLabel = triangle.vd0.mode === 'max-c' ? 'max c' : triangle.vd0.mode === 'max-a' ? 'max a' : 'max b';
+    return status
+      ? `${id} raw=(${status.raw.a.toFixed(3)}, ${status.raw.b.toFixed(3)}, ${status.raw.c.toFixed(3)}), ${maxLabel}=${status.max.toFixed(3)}`
+      : id;
+  }).join('; ');
+  freeState.status = result.ok
+    ? 'Vd0 auto-placed enabled triangles.'
+    : `Vd0 auto-place failed: ${failureText}.`;
 }
 
 function summarizeFreeValidation(validation: FreeValidationResult): string {
@@ -1172,6 +1203,18 @@ function renderFreePanel(validation: FreeValidationResult): void {
     const midpoints = allowedMidpointIndices(triangle.id).map((index) =>
       `<label><input type="checkbox" data-midpoint="${triangle.id}:${index}"${triangle.midpointConstraints[index] ? ' checked' : ''}/>M${index}</label>`,
     ).join('');
+    const vd0Status = getFreeVd0Status(freeState, triangle);
+    const vd0MaxLabel = triangle.vd0.mode === 'max-c' ? 'max c' : triangle.vd0.mode === 'max-a' ? 'max a' : 'max b';
+    const vd0Controls = triangle.id === 'C' ? '' : `
+      <label><input type="checkbox" data-vd0-enabled="${triangle.id}"${triangle.vd0.enabled ? ' checked' : ''}/>Vd0</label>
+      <label>Vd0 mode
+        <select data-vd0-mode="${triangle.id}"${triangle.vd0.enabled ? '' : ' disabled'}>
+          <option value="max-c"${triangle.vd0.mode === 'max-c' ? ' selected' : ''}>max c from a,b</option>
+          <option value="max-a"${triangle.vd0.mode === 'max-a' ? ' selected' : ''}>max a from b,c</option>
+          <option value="max-b"${triangle.vd0.mode === 'max-b' ? ' selected' : ''}>max b from c,a</option>
+        </select>
+      </label>
+      ${vd0Status ? `<span class="free-small-status">raw a=${vd0Status.raw.a.toFixed(3)}, b=${vd0Status.raw.b.toFixed(3)}, c=${vd0Status.raw.c.toFixed(3)}; ${vd0MaxLabel}=${vd0Status.max.toFixed(3)}</span>` : ''}`;
     const edge = triangle.edgePointConstraint;
     const manualPoint = edge?.point.kind === 'manual' ? edge.point.manualPoint : null;
     const edgeControls = `
@@ -1196,6 +1239,7 @@ function renderFreePanel(validation: FreeValidationResult): void {
         <label><input type="checkbox" data-fixed="${triangle.id}"${triangle.fixed ? ' checked' : ''}/>fixed</label>
         <label><input type="checkbox" data-hidden="${triangle.id}"${triangle.hidden ? ' checked' : ''}${triangle.fixed ? '' : ' disabled'}/>hidden</label>
         ${midpoints}
+        ${vd0Controls}
         ${edgeControls}
         <span class="free-small-status">${status?.ok ? 'ok' : status?.messages.join(', ')}</span>
       </div>`;
@@ -1601,6 +1645,28 @@ freeControls.addEventListener('change', (event) => {
     render();
     return;
   }
+  const vd0Enabled = target.dataset.vd0Enabled;
+  if (vd0Enabled) {
+    const triangle = getTriangle(freeState, vd0Enabled as FreeTriangleId);
+    triangle.vd0.enabled = (target as HTMLInputElement).checked;
+    if (triangle.vd0.enabled) {
+      autoPlaceAllFreeVd0FromControls();
+    }
+    render();
+    return;
+  }
+  const vd0Mode = target.dataset.vd0Mode;
+  if (vd0Mode) {
+    const triangle = getTriangle(freeState, vd0Mode as FreeTriangleId);
+    if (target.value === 'max-c' || target.value === 'max-a' || target.value === 'max-b') {
+      triangle.vd0.mode = target.value as FreeVd0Mode;
+      if (triangle.vd0.enabled) {
+        autoPlaceAllFreeVd0FromControls();
+      }
+      render();
+    }
+    return;
+  }
   const edgeIndexTarget = target.dataset.edgeIndex;
   if (edgeIndexTarget) {
     const triangle = getTriangle(freeState, edgeIndexTarget as FreeTriangleId);
@@ -1721,7 +1787,10 @@ setupInteraction(
   },
 );
 
-freeInteractionApi = setupFreeInteraction(canvas, () => freeState, render);
+freeInteractionApi = setupFreeInteraction(canvas, () => freeState, render, () => {
+  autoPlaceAllFreeVd0FromControls();
+  render();
+});
 window.addEventListener('resize', () => {
   syncCanvasSizes();
   render();

@@ -1,6 +1,6 @@
 import type { Point } from './types';
 import { HEXAGON_VERTICES } from './hexagon';
-import type { CoverTriangle } from './cover';
+import { fitTriangle, type CoverTriangle } from './cover';
 import {
   type FreeConstraintStatus,
   type FreeLabel,
@@ -11,6 +11,7 @@ import {
   type FreeTarget,
   type FreeTriangleId,
   type FreeTriangleState,
+  type FreeVd0Mode,
   type FreeValidationResult,
   type FreeValidationSegment,
 } from './freeTypes';
@@ -19,7 +20,10 @@ const SQRT3 = Math.sqrt(3);
 const CIRCUMRADIUS = 1 / SQRT3;
 const INRADIUS = 1 / (2 * SQRT3);
 const CONSTRAINT_ITERS = 8;
+const VD0_SAMPLES = 512;
+const VD0_SEARCH_STEPS = 48;
 const EPS = 1e-9;
+const VD0_FIT_SIDE_TOLERANCE = 1e-6;
 
 const FREE_COLORS: Record<FreeTriangleId, string> = {
   C: '#0ea5e9',
@@ -48,7 +52,7 @@ export function triangleVertices(center: Point, angle: number): [Point, Point, P
 
 export function createDefaultFreeState(): FreeState {
   const triangles: FreeTriangleState[] = [
-    { id: 'C', center: { x: 0, y: 0 }, angle: 0, fixed: false, hidden: false, midpointConstraints: Array(6).fill(false), edgePointConstraint: null },
+    { id: 'C', center: { x: 0, y: 0 }, angle: 0, fixed: false, hidden: false, midpointConstraints: Array(6).fill(false), edgePointConstraint: null, vd0: { enabled: false, mode: 'max-c' } },
     ...HEXAGON_VERTICES.map((vertex, index) => ({
       id: `V${index}` as FreeTriangleId,
       center: { x: vertex.x * 0.78, y: vertex.y * 0.78 },
@@ -57,6 +61,7 @@ export function createDefaultFreeState(): FreeState {
       hidden: false,
       midpointConstraints: Array(6).fill(false),
       edgePointConstraint: null,
+      vd0: { enabled: false, mode: 'max-c' as FreeVd0Mode },
     })),
   ];
 
@@ -310,6 +315,187 @@ function gapsFromIntervals(intervals: Array<[number, number]>): Array<[number, n
   return gaps;
 }
 
+function classicalAdmissibleOrdered(a: number, b: number, c: number, strictInput: number): boolean {
+  const strict = Math.max(0, strictInput);
+  const sum = a + b;
+  const circle = a * a + a * b + b * b;
+  if (circle > 1 - strict + EPS) {
+    return false;
+  }
+
+  const transition = sum ** 4 - sum * sum + a * b;
+  const cell1 =
+    sum <= 1 - strict + EPS &&
+    transition <= -strict + EPS &&
+    c ** 4 - c * c + a * c - a * a <= -strict + EPS;
+  const cell2 =
+    sum <= 1 - strict + EPS &&
+    transition >= strict - EPS &&
+    (sum * sum - 1) * c * c + b * c - b * b <= -strict + EPS;
+  const cell3 =
+    sum >= 1 + strict - EPS &&
+    c <= 0.5 - strict + EPS &&
+    (a * a - 1) * c * c + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= -strict + EPS;
+
+  return cell1 || cell2 || cell3;
+}
+
+function classicalAdmissible(aInput: number, bInput: number, cInput: number, strictInput: number): boolean {
+  const a = Math.max(0, Math.min(1, aInput));
+  const b = Math.max(0, Math.min(1, bInput));
+  const c = Math.max(0, Math.min(1, cInput));
+  if (a <= b + EPS) {
+    return classicalAdmissibleOrdered(a, b, c, strictInput);
+  }
+  return classicalAdmissibleOrdered(b, a, c, strictInput);
+}
+
+function maxClassicalCoordinate(mode: FreeVd0Mode, a: number, b: number, c: number, strictEps: number): number {
+  const predicate = (value: number): boolean => {
+    if (mode === 'max-c') return classicalAdmissible(a, b, value, strictEps);
+    if (mode === 'max-a') return classicalAdmissible(value, b, c, strictEps);
+    return classicalAdmissible(a, value, c, strictEps);
+  };
+  if (predicate(1)) return 1;
+
+  const step = 1 / VD0_SAMPLES;
+  let lo = -1;
+  let hi = 1;
+  for (let i = VD0_SAMPLES - 1; i >= 0; i--) {
+    const value = step * i;
+    if (predicate(value)) {
+      lo = value;
+      hi = Math.min(1, value + step);
+      break;
+    }
+  }
+  if (lo < 0) return 0;
+
+  for (let i = 0; i < VD0_SEARCH_STEPS; i++) {
+    const mid = (lo + hi) / 2;
+    if (predicate(mid)) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return Math.max(0, Math.min(1, lo));
+}
+
+function farthestGapEndExcludingTriangle(
+  state: FreeState,
+  excludedId: FreeTriangleId,
+  start: Point,
+  end: Point,
+): number {
+  const intervals = mergeIntervals(
+    state.triangles
+      .filter((triangle) => triangle.id !== excludedId)
+      .map((triangle) => strictIntervalOnSegment(start, end, triangle, state.strictEps)),
+  );
+  const gaps = gapsFromIntervals(intervals);
+  return gaps.reduce((max, gap) => Math.max(max, gap[1]), 0);
+}
+
+export interface FreeVd0Status {
+  ok: boolean;
+  message: string | null;
+  raw: { a: number; b: number; c: number };
+  target: { a: number; b: number; c: number };
+  max: number;
+}
+
+interface FreeVd0Target {
+  raw: { a: number; b: number; c: number };
+  a: number;
+  b: number;
+  c: number;
+  max: number;
+  points: Point[];
+}
+
+export function getFreeVd0Status(state: FreeState, triangle: FreeTriangleState): FreeVd0Status | null {
+  const target = getFreeVd0Target(state, triangle);
+  if (!target) return null;
+  return {
+    ok: true,
+    message: null,
+    raw: target.raw,
+    target: { a: target.a, b: target.b, c: target.c },
+    max: target.max,
+  };
+}
+
+function pointOnSegment(start: Point, end: Point, value: number): Point {
+  return {
+    x: start.x + value * (end.x - start.x),
+    y: start.y + value * (end.y - start.y),
+  };
+}
+
+function getFreeVd0Target(state: FreeState, triangle: FreeTriangleState): FreeVd0Target | null {
+  if (triangle.id === 'C' || !triangle.vd0.enabled) {
+    return null;
+  }
+
+  const index = Number(triangle.id.slice(1));
+  const vertex = HEXAGON_VERTICES[index];
+  let a = farthestGapEndExcludingTriangle(state, triangle.id, vertex, HEXAGON_VERTICES[(index + 5) % 6]);
+  let b = farthestGapEndExcludingTriangle(state, triangle.id, vertex, HEXAGON_VERTICES[(index + 1) % 6]);
+  let c = farthestGapEndExcludingTriangle(state, triangle.id, vertex, { x: 0, y: 0 });
+  const raw = { a, b, c };
+  const max = maxClassicalCoordinate(triangle.vd0.mode, a, b, c, state.strictEps);
+
+  if (triangle.vd0.mode === 'max-c') c = max;
+  if (triangle.vd0.mode === 'max-a') a = max;
+  if (triangle.vd0.mode === 'max-b') b = max;
+
+  return {
+    raw,
+    a,
+    b,
+    c,
+    max,
+    points: [
+      vertex,
+      pointOnSegment(vertex, HEXAGON_VERTICES[(index + 5) % 6], a),
+      pointOnSegment(vertex, HEXAGON_VERTICES[(index + 1) % 6], b),
+      pointOnSegment(vertex, { x: 0, y: 0 }, c),
+    ],
+  };
+}
+
+export function autoPlaceFreeVd0Triangle(state: FreeState, triangle: FreeTriangleState): { ok: true } | { ok: false; reason: string } {
+  const target = getFreeVd0Target(state, triangle);
+  if (!target) {
+    return { ok: true };
+  }
+
+  const fitted = fitTriangle(triangle.id, target.points, colorForTriangle(triangle.id));
+  if (fitted.side > 1 + VD0_FIT_SIDE_TOLERANCE) {
+    return { ok: false, reason: `Vd0 auto-place failed; fitted side=${fitted.side.toFixed(6)}.` };
+  }
+
+  triangle.fixed = false;
+  triangle.hidden = false;
+  triangle.center = fitted.center;
+  triangle.angle = fitted.phi - Math.PI / 2;
+  return { ok: true };
+}
+
+export function autoPlaceAllFreeVd0Triangles(state: FreeState): { ok: true } | { ok: false; failedIds: FreeTriangleId[] } {
+  const failedIds: FreeTriangleId[] = [];
+  for (let i = 0; i < 6; i++) {
+    const triangle = state.triangles.find((candidate) => candidate.id === `V${i}` as FreeTriangleId);
+    if (!triangle?.vd0.enabled) continue;
+    const result = autoPlaceFreeVd0Triangle(state, triangle);
+    if (!result.ok) {
+      failedIds.push(triangle.id);
+    }
+  }
+  return failedIds.length === 0 ? { ok: true } : { ok: false, failedIds };
+}
+
 export function validateFreeState(state: FreeState): FreeValidationResult {
   const visibleOrHiddenTriangles = state.triangles;
   const segments: FreeValidationSegment[] = [];
@@ -359,6 +545,10 @@ export function validateFreeState(state: FreeState): FreeValidationResult {
           messages.push(`edge misses ${namedPointLabel(triangle.edgePointConstraint.point)}`);
         }
       }
+    }
+    const vd0Status = getFreeVd0Status(state, triangle);
+    if (vd0Status?.message) {
+      messages.push(vd0Status.message);
     }
     return { triangleId: triangle.id, ok: messages.length === 0, messages };
   });

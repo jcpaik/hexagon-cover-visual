@@ -189,7 +189,7 @@ function positiveMod(value: number, period: number): number {
   return ((value % period) + period) % period;
 }
 
-function fitTriangle(name: string, points: Point[], color: string): CoverTriangle {
+export function fitTriangle(name: string, points: Point[], color: string): CoverTriangle {
   const gridStep = ANGLE_PERIOD / SEARCH_GRID;
   let bestIndex = 0;
   let bestValue = Number.POSITIVE_INFINITY;
