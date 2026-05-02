@@ -162,7 +162,7 @@ export function setupInteraction(
 
     const shapeMode = getShapeMode();
 
-    if (shapeMode === 'local-c') {
+    if (shapeMode === 'local-c' || shapeMode === 'free') {
       return { kind: 'none' };
     }
 
@@ -260,6 +260,10 @@ export function setupInteraction(
     const halfDiagonalIndex = getHalfDiagonalHoverIndex(mouse, pointerType);
     const hit = hitTest(mouse, pointerType);
     const shapeMode = getShapeMode();
+    if (shapeMode === 'free') {
+      updateCursor(mouse, pointerType);
+      return;
+    }
     let startedInteraction = true;
 
     switch (hit.kind) {

@@ -68,6 +68,16 @@ canvas {
   flex-wrap: wrap;
 }
 
+#graph-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#graph-panel[hidden] {
+  display: none;
+}
+
 #strict-check-panel {
   display: flex;
   flex-direction: column;
@@ -252,6 +262,156 @@ canvas {
   border: 1px solid #cbd5e1;
   background: #f8fafc;
   padding: 8px;
+}
+
+#free-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  padding: 8px;
+}
+
+#free-panel[hidden] {
+  display: none;
+}
+
+#free-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  color: #334155;
+}
+
+.free-row,
+.free-toolbar,
+.free-triangle-row,
+.free-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.free-triangle-row,
+.free-label-row {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  padding: 7px;
+}
+
+.free-triangle-row.is-selected {
+  border-color: #475569;
+  background: #eef2ff;
+}
+
+.free-triangle-row.is-bad {
+  border-color: #fca5a5;
+}
+
+.free-name {
+  min-width: 26px;
+  font-weight: 700;
+}
+
+.free-row label,
+.free-toolbar label,
+.free-triangle-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.free-row select,
+.free-row input,
+.free-toolbar input,
+.free-triangle-row select,
+.free-manual-input {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  padding: 4px 6px;
+}
+
+.free-button {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.free-button.is-active {
+  border-color: #475569;
+  background: #e2e8f0;
+}
+
+.free-small-status {
+  color: #64748b;
+  overflow-wrap: anywhere;
+}
+
+#free-state-panel {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  padding: 8px;
+}
+
+#free-state-panel summary {
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 13px;
+  color: #334155;
+}
+
+#free-state-json {
+  width: 100%;
+  min-height: 150px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+#free-state-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+#free-state-status {
+  font-family: monospace;
+  font-size: 12px;
+  color: #475569;
+}
+
+#free-state-actions {
+  display: flex;
+  gap: 8px;
+}
+
+#free-state-copy,
+#free-state-load {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
 }
 
 #controller-state-panel summary {

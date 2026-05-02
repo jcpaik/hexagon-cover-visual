@@ -9,7 +9,7 @@ export interface TriangleState {
   controlPoint: Point;
 }
 
-export type ShapeMode = 'triangle' | 'local-c' | 'circle';
+export type ShapeMode = 'triangle' | 'local-c' | 'circle' | 'free';
 
 export type InteractionState =
   | { kind: 'idle' }
