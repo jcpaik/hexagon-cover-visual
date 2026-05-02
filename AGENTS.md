@@ -1,54 +1,61 @@
-# Hexagon Cover Visual
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
-## Project Summary
+## 1. Think Before Coding
 
-This is a Vite + TypeScript browser app for exploring a regular hexagon skeleton and the triangle-cover geometry around it. The main UI draws a hexagon skeleton, a central C-triangle or C-circle, derived `gamma` and `c_i` values, map/composition graphs, and an optional live overlay of six perimeter `V_i` triangles with skeleton coverage gaps.
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
 
-The app is static/client-only. There is no backend service.
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask. It is ok to ask many questions like 100 questions. 
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
 
-## Common Commands
+## 2. Simplicity First
 
-- `npm install`: install dependencies.
-- `npm run dev`: start the Vite dev server.
-- `npm run build`: type-check and build the production site into `dist/`.
-- `npm run preview`: preview the production build locally.
-- `python3 counterexample_cover.py`: regenerate the saved counterexample SVG/JSON from `counterexample_snapshot.json`.
+**Minimum code that solves the problem. Nothing speculative.**
 
-## Main Directory Files
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
 
-- `index.html`: browser app shell. Defines the two canvas panels, shape/map controls, strict-check controls, cover overlay toggle, admissible-function editor, and controller-state editor.
-- `package.json`: npm scripts and dev dependencies for Vite and TypeScript.
-- `package-lock.json`: locked npm dependency versions.
-- `vite.config.ts`: Vite configuration. Currently uses the default config.
-- `tsconfig.json`: TypeScript compiler settings.
-- `APP.md`: short app overview and file map.
-- `MATH.md`: mathematical explanation of the hexagon skeleton, C-triangle gamma values, local admissible coordinates, and composition argument.
-- `COUNTEREXAMPLE.md`: explanation of the retained counterexample artifacts and how to regenerate them.
-- `counterexample_snapshot.json`: saved controller snapshot used by the Python counterexample generator.
-- `counterexample_cover.py`: Python script that derives seven triangles from a snapshot, verifies skeleton coverage, and exports SVG/JSON artifacts.
-- `counterexample_cover.json`: explicit generated triangle data for the retained counterexample.
-- `counterexample_cover.svg`: SVG visualization of the retained seven-triangle counterexample.
-- `prompts/`: saved prompt/context notes. Treat as user-owned content unless explicitly asked to edit.
-- `dist/`: generated production build output after `npm run build`. Do not edit by hand.
-- `node_modules/`: installed dependencies. Do not edit by hand.
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
-## Source Files
+## 3. Surgical Changes
 
-- `src/main.ts`: main app wiring. Owns UI state, snapshot load/save, event listeners, render orchestration, cover overlay drawing, and communication with the graph renderer.
-- `src/style.css`: layout and visual styling for panels, canvases, buttons, editors, readouts, and overlay controls.
-- `src/types.ts`: shared TypeScript types for points, shape modes, triangle state, and pointer interaction state.
-- `src/coords.ts`: math-coordinate to canvas-coordinate transforms and responsive canvas sizing configuration.
-- `src/geometry.ts`: pure geometry helpers: distances, point-in-shape checks, segment projection, clamping, rotation, and ray intersections.
-- `src/hexagon.ts`: regular hexagon vertex constants and drawing of the hexagon boundary plus three main diagonals.
-- `src/triangle.ts`: C-triangle/C-circle geometry, drawing, valid centroid region, control point drawing, and gamma extraction along hexagon rays.
-- `src/maps.ts`: admissible-set predicate, strict epsilon handling, `g_c`, pair composition, full local-`c` composition, and chain value computation.
-- `src/region.ts`: right-side graph canvas renderer for single `g_c`, pair composition, and full six-step composition.
-- `src/interaction.ts`: pointer interaction state machine for dragging/moving/rotating the C-shape, editing manual `c_i`, selecting start values, and toggling half-diagonals.
-- `src/cover.ts`: live TypeScript port of the needed counterexample-cover logic. Fits six perimeter `V_i` triangles, computes triangle halfplanes, intersects them with skeleton segments, merges covered intervals, and reports uncovered gaps.
+**Touch only what you must. Clean up only your own mess.**
 
-## Editing Notes
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
 
-- Prefer keeping mathematical helper code pure and isolated in `src/geometry.ts`, `src/maps.ts`, or `src/cover.ts`.
-- UI state and DOM wiring should stay in `src/main.ts`.
-- The Python counterexample generator is a reference implementation for saved artifacts, not runtime website code.
-- If changing geometry or admissible-map behavior, run `npm run build` and manually compare the website against the relevant explanation in `MATH.md`.
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+---
+
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

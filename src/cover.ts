@@ -51,6 +51,8 @@ export interface CoverResult {
   tooLargeTriangles: string[];
 }
 
+export type CoverChainDirection = 'ccw' | 'cw';
+
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
@@ -187,7 +189,7 @@ function positiveMod(value: number, period: number): number {
   return ((value % period) + period) % period;
 }
 
-function fitTriangle(name: string, points: Point[], color: string): CoverTriangle {
+export function fitTriangle(name: string, points: Point[], color: string): CoverTriangle {
   const gridStep = ANGLE_PERIOD / SEARCH_GRID;
   let bestIndex = 0;
   let bestValue = Number.POSITIVE_INFINITY;
@@ -216,21 +218,28 @@ function fitTriangle(name: string, points: Point[], color: string): CoverTriangl
   return buildTriangle(name, center, best.beta + Math.PI, 2 * SQRT3 * best.radius, color);
 }
 
-function buildCoverSteps(localCs: number[], startValue: number, strict: number): CoverStep[] {
+function buildCoverSteps(
+  localCs: number[],
+  startValue: number,
+  strict: number,
+  vertexOrder: number[],
+  direction: CoverChainDirection,
+): CoverStep[] {
   const steps: CoverStep[] = [];
   let current = clamp01(startValue);
 
-  localCs.forEach((localC, index) => {
-    const b = maxAdmissibleCoverage(current, localC);
-    const aNext = clamp01(1 + strict - b);
+  localCs.forEach((localC, orderIndex) => {
+    const index = vertexOrder[orderIndex] ?? orderIndex;
+    const oppositeCoverage = maxAdmissibleCoverage(current, localC);
+    const next = clamp01(1 + strict - oppositeCoverage);
     steps.push({
       index,
-      a: current,
-      b,
+      a: direction === 'ccw' ? current : oppositeCoverage,
+      b: direction === 'ccw' ? oppositeCoverage : current,
       c: clamp01(localC),
-      aNext,
+      aNext: next,
     });
-    current = aNext;
+    current = next;
   });
 
   return steps;
@@ -343,10 +352,12 @@ export function computeCoverResult(
   localCs: number[],
   startValue: number,
   strict: number,
+  vertexOrder = [0, 1, 2, 3, 4, 5],
+  direction: CoverChainDirection = 'ccw',
 ): CoverResult {
-  const steps = buildCoverSteps(localCs, startValue, strict);
-  const vTriangles = steps.map((step, index) =>
-    fitTriangle(`V${index}`, localPoints(index, step), COLORS[index]),
+  const steps = buildCoverSteps(localCs, startValue, strict, vertexOrder, direction);
+  const vTriangles = steps.map((step) =>
+    fitTriangle(`V${step.index}`, localPoints(step.index, step), COLORS[step.index]),
   );
   const allTriangles = [buildCentralCoverTriangle(triangleState), ...vTriangles];
   const segments = buildCoverageReport(allTriangles);
