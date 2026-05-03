@@ -451,7 +451,9 @@ export function getFreeVd0RawSourceOptions(
   coordinate: FreeVd0Coordinate,
 ): FreeVd0RawSourceOption[] {
   if (triangle.id === 'C') return [];
+  const vertexIndex = Number(triangle.id.slice(1));
   const refs: FreeNamedPointRef[] = [
+    { kind: 'V', index: vertexIndex },
     ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'M', index }) as FreeNamedPointRef),
     ...state.labels.map((label) => ({ kind: 'label', labelId: label.id }) as FreeNamedPointRef),
   ];
