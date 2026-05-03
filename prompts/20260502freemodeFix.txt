@@ -18,3 +18,12 @@ then change the Vd0 auto place. tell me mathematiclly rigorously how
 
 don't accept just 1+ 1e-6. make it tighter
 reduce this side tolerance to 1e-9 and also accept the autoplace only if the final stored unit actually contains the required a,b,c and V_i points
+
+
+› change curent mark name to dynamic mark, and add a static mark tool where if you mark, the coordinate is fixed. marking way is same. name them d-mark
+  and s-mark, or do you have a better name? ask me questions
+
+  Should static marks keep their two source segment refs after creation: only if one of the segment is a fixed segment like half diagonal or hexagon
+  edge
+
+  to make the shape of labels same, just record first and second also for the static label shape

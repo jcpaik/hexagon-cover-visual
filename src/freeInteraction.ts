@@ -101,7 +101,7 @@ export function setupFreeInteraction(
   function updateCursor(point: Point): void {
     const state = getState();
     if (!enabled) return;
-    if (state.tool === 'mark') {
+    if (state.tool === 'd-mark' || state.tool === 's-mark') {
       canvas.style.cursor = segmentUnderPoint(point) ? 'crosshair' : 'default';
       return;
     }
@@ -129,7 +129,7 @@ export function setupFreeInteraction(
       return;
     }
 
-    const label = createLabel(state, next[0], next[1]);
+    const label = createLabel(state, next[0], next[1], state.tool === 's-mark' ? 'static' : 'dynamic');
     if (!label) {
       state.status = 'Selected segments do not intersect.';
       state.selectedSegments = [];
@@ -144,7 +144,7 @@ export function setupFreeInteraction(
     if (!enabled || !e.isPrimary) return;
     const point = getPointerMath(e);
     const state = getState();
-    if (state.tool === 'mark') {
+    if (state.tool === 'd-mark' || state.tool === 's-mark') {
       const ref = segmentUnderPoint(point);
       if (ref) {
         selectMarkSegment(ref);

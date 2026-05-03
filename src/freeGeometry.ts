@@ -78,6 +78,10 @@ export function createDefaultFreeState(): FreeState {
   };
 }
 
+function isFixedSegmentRef(ref: FreeSegmentRef): boolean {
+  return ref.kind === 'hex-edge' || ref.kind === 'half-diagonal';
+}
+
 export function colorForTriangle(id: FreeTriangleId): string {
   return FREE_COLORS[id];
 }
@@ -769,20 +773,49 @@ export function segmentIntersection(a: FreeSegment, b: FreeSegment): Point | nul
 
 export function refreshLabels(state: FreeState): void {
   for (const label of state.labels) {
+    if (label.mode === 'static') {
+      continue;
+    }
+    if (!label.first || !label.second) {
+      label.point = null;
+      continue;
+    }
     const first = getSegmentByRef(state, label.first);
     const second = getSegmentByRef(state, label.second);
     label.point = first && second ? segmentIntersection(first, second) : null;
   }
 }
 
-export function createLabel(state: FreeState, first: FreeSegmentRef, second: FreeSegmentRef): FreeLabel | null {
+function nextLabelId(state: FreeState, mode: FreeLabel['mode']): string {
+  const prefix = mode === 'dynamic' ? 'D' : 'S';
+  const max = state.labels.reduce((currentMax, label) => {
+    if (label.mode !== mode || !label.id.startsWith(prefix)) return currentMax;
+    const value = Number.parseInt(label.id.slice(prefix.length), 10);
+    return Number.isFinite(value) ? Math.max(currentMax, value) : currentMax;
+  }, 0);
+  return `${prefix}${max + 1}`;
+}
+
+export function createLabel(
+  state: FreeState,
+  first: FreeSegmentRef,
+  second: FreeSegmentRef,
+  mode: FreeLabel['mode'],
+): FreeLabel | null {
   const firstSegment = getSegmentByRef(state, first);
   const secondSegment = getSegmentByRef(state, second);
   if (!firstSegment || !secondSegment) return null;
   const point = segmentIntersection(firstSegment, secondSegment);
   if (!point) return null;
-  const id = `P${state.labels.length + 1}`;
-  return { id, name: id, first, second, point };
+  const id = nextLabelId(state, mode);
+  return {
+    id,
+    name: id,
+    mode,
+    first: mode === 'dynamic' || isFixedSegmentRef(first) ? first : null,
+    second: mode === 'dynamic' || isFixedSegmentRef(second) ? second : null,
+    point,
+  };
 }
 
 export function describeTarget(target: FreeTarget): string {
