@@ -2,7 +2,7 @@ import type { Point } from './types';
 
 export type FreeTriangleId = 'C' | 'V0' | 'V1' | 'V2' | 'V3' | 'V4' | 'V5';
 export type FreeTarget = 'S_HALF' | 'S';
-export type FreeTool = 'move' | 'mark';
+export type FreeTool = 'move' | 'd-mark' | 's-mark';
 export type FreeVd0Mode = 'max-c' | 'max-a' | 'max-b';
 export type FreeVd0Coordinate = 'a' | 'b' | 'c';
 export type NamedPointKind = 'O' | 'M' | 'V' | 'label' | 'manual';
@@ -24,8 +24,9 @@ export interface FreeSegmentRef {
 export interface FreeLabel {
   id: string;
   name: string;
-  first: FreeSegmentRef;
-  second: FreeSegmentRef;
+  mode: 'dynamic' | 'static';
+  first: FreeSegmentRef | null;
+  second: FreeSegmentRef | null;
   point: Point | null;
 }
 

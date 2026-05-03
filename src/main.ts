@@ -52,6 +52,8 @@ import {
 import { setupFreeInteraction } from './freeInteraction';
 import type {
   FreeNamedPointRef,
+  FreeLabel,
+  FreeSegmentRef,
   FreeState,
   FreeTarget,
   FreeTool,
@@ -1152,6 +1154,49 @@ function formatFreeSnapshot(): string {
   return JSON.stringify({ version: 1, ...freeState }, null, 2);
 }
 
+function isFreeSegmentRef(value: unknown): value is FreeSegmentRef {
+  if (!value || typeof value !== 'object') return false;
+  const ref = value as Partial<FreeSegmentRef>;
+  if (typeof ref.index !== 'number' || !Number.isInteger(ref.index)) return false;
+  if (ref.kind === 'hex-edge' || ref.kind === 'half-diagonal') return true;
+  return ref.kind === 'triangle-edge' && (
+    ref.triangleId === 'C' ||
+    ref.triangleId === 'V0' ||
+    ref.triangleId === 'V1' ||
+    ref.triangleId === 'V2' ||
+    ref.triangleId === 'V3' ||
+    ref.triangleId === 'V4' ||
+    ref.triangleId === 'V5'
+  );
+}
+
+function isFreeTool(value: unknown): value is FreeTool {
+  return value === 'move' || value === 'd-mark' || value === 's-mark';
+}
+
+function isFixedFreeSegmentRef(value: unknown): value is FreeSegmentRef {
+  return isFreeSegmentRef(value) && (value.kind === 'hex-edge' || value.kind === 'half-diagonal');
+}
+
+function isFreeLabel(value: unknown): value is FreeLabel {
+  if (!value || typeof value !== 'object') return false;
+  const label = value as Partial<FreeLabel>;
+  if (typeof label.id !== 'string' || typeof label.name !== 'string') return false;
+  if (label.mode !== 'dynamic' && label.mode !== 'static') return false;
+  if (
+    label.point !== null &&
+    (!label.point || typeof label.point.x !== 'number' || typeof label.point.y !== 'number')
+  ) {
+    return false;
+  }
+  if (label.mode === 'dynamic') {
+    return isFreeSegmentRef(label.first) && isFreeSegmentRef(label.second);
+  }
+  if (label.point === null) return false;
+  return (label.first === null || isFixedFreeSegmentRef(label.first)) &&
+    (label.second === null || isFixedFreeSegmentRef(label.second));
+}
+
 function setFreeStateStatus(text: string, isError = false): void {
   freeStateStatus.textContent = text;
   freeStateStatus.style.color = isError ? '#b91c1c' : '#475569';
@@ -1161,6 +1206,16 @@ function loadFreeSnapshot(raw: string): void {
   const parsed = JSON.parse(raw) as Partial<FreeState> & { version?: number };
   if (parsed.version !== 1 || !Array.isArray(parsed.triangles) || parsed.triangles.length !== 7) {
     throw new Error('Invalid free snapshot.');
+  }
+  if (parsed.tool !== undefined && !isFreeTool(parsed.tool)) {
+    throw new Error('Invalid free snapshot tool.');
+  }
+  if (parsed.labels !== undefined && !Array.isArray(parsed.labels)) {
+    throw new Error('Invalid free snapshot labels.');
+  }
+  const labels = Array.isArray(parsed.labels) ? parsed.labels : [];
+  if (!labels.every(isFreeLabel)) {
+    throw new Error('Invalid free snapshot labels.');
   }
   const defaults = createDefaultFreeState();
   freeState = {
@@ -1178,7 +1233,7 @@ function loadFreeSnapshot(raw: string): void {
         },
       },
     })) as FreeState['triangles'],
-    labels: Array.isArray(parsed.labels) ? parsed.labels : [],
+    labels,
     selectedSegments: [],
   } as FreeState;
   freeInitializedFromCurrent = true;
@@ -1240,7 +1295,7 @@ function renderFreePanel(validation: FreeValidationResult): void {
   const targetButtons = (['S_HALF', 'S'] as FreeTarget[]).map((target) =>
     `<button type="button" class="free-button${freeState.target === target ? ' is-active' : ''}" data-free-target="${target}">${describeTarget(target)}</button>`,
   ).join('');
-  const toolButtons = (['move', 'mark'] as FreeTool[]).map((tool) =>
+  const toolButtons = (['move', 'd-mark', 's-mark'] as FreeTool[]).map((tool) =>
     `<button type="button" class="free-button${freeState.tool === tool ? ' is-active' : ''}" data-free-tool="${tool}">${tool}</button>`,
   ).join('');
   const statuses = new Map(validation.constraintStatuses.map((status) => [status.triangleId, status]));
@@ -1312,7 +1367,7 @@ function renderFreePanel(validation: FreeValidationResult): void {
     <div class="free-row"><span>${freeState.status}</span></div>
     ${triangleRows}
     <div class="free-row"><strong>labels</strong></div>
-    ${labelRows || '<div class="free-small-status">No labels. Use mark mode and click two intersecting segments.</div>'}
+    ${labelRows || '<div class="free-small-status">No labels. Use d-mark or s-mark and click two intersecting segments.</div>'}
   `;
   freeStateJson.value = formatFreeSnapshot();
 }
@@ -1636,8 +1691,10 @@ freeControls.addEventListener('click', (event) => {
   const toolButton = target.closest<HTMLButtonElement>('[data-free-tool]');
   if (toolButton) {
     freeState.tool = toolButton.dataset.freeTool as FreeTool;
-    freeState.status = freeState.tool === 'mark'
-      ? 'Mark mode: click two intersecting segments.'
+    freeState.status = freeState.tool === 'd-mark'
+      ? 'D-mark mode: click two intersecting segments.'
+      : freeState.tool === 's-mark'
+        ? 'S-mark mode: click two intersecting segments.'
       : 'Move mode: drag selected triangles.';
     render();
     return;

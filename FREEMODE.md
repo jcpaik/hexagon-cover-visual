@@ -110,23 +110,29 @@ Named points include:
 - the six \(M_i\),
 - the six \(V_i\),
 - dynamic labeled intersection points,
+- static labeled intersection points,
 - manual coordinate points in saved state.
 
-Dynamic labeled points are created by selecting two finite line segments.  The
-allowed source segments are:
+Labeled points are created with either `d-mark` or `s-mark` by selecting two
+finite line segments.  The allowed source segments are:
 
 - hexagon boundary edges,
 - half-diagonals \([O,V_i]\),
 - visible triangle edges.
 
-If the two selected segments intersect, the label stores both source segments
-and recomputes its coordinate whenever the triangles move.  If the selected
-segments do not intersect, no label is created.
+If the two selected segments intersect, `d-mark` creates a dynamic label
+(`D1`, `D2`, ...) that stores both source segments and recomputes its coordinate
+whenever the triangles move.  `s-mark` creates a static label (`S1`, `S2`, ...)
+whose coordinate is fixed at creation time.  Static labels keep the same
+`first` and `second` fields as dynamic labels, but only fixed source segments
+(hexagon edges and half-diagonals) are recorded; triangle-edge sources are
+stored as `null`.  If the selected segments do not intersect, no label is
+created.
 
-While a label is being created in mark mode, selected source segments are
-highlighted in the figure.  This highlight is temporary bookkeeping only; it
-does not add a geometric constraint unless a labeled point is later used in an
-edge-through-point constraint.
+While a label is being created in either mark mode, selected source segments
+are highlighted in the figure.  This highlight is temporary bookkeeping only;
+it does not add a geometric constraint unless a labeled point is later used in
+an edge-through-point constraint.
 
 ## Vd0 Raw Sources
 
