@@ -962,6 +962,7 @@ function initializeFreeFromCurrentIfNeeded(): void {
     chain.direction,
   );
   const next = createDefaultFreeState();
+  next.strictEps = getEffectiveStrictEps();
   getTriangle(next, 'C').center = { ...triangleState.position };
   getTriangle(next, 'C').angle = triangleState.angle;
   for (const coverTriangle of result.vTriangles) {
@@ -1153,7 +1154,22 @@ function loadFreeSnapshot(raw: string): void {
   refreshLabels(freeState);
 }
 
+function syncFreeStrictEps(projectConstraints = false): void {
+  const nextStrictEps = getEffectiveStrictEps();
+  if (freeState.strictEps === nextStrictEps) {
+    return;
+  }
+  freeState.strictEps = nextStrictEps;
+  if (projectConstraints) {
+    for (const triangle of freeState.triangles) {
+      projectTriangleToConstraints(freeState, triangle);
+    }
+    refreshLabels(freeState);
+  }
+}
+
 function autoPlaceAllFreeVd0FromControls(): void {
+  syncFreeStrictEps();
   if (!freeState.triangles.some((triangle) => triangle.id !== 'C' && triangle.vd0.enabled)) {
     return;
   }
@@ -1254,10 +1270,7 @@ function renderFreePanel(validation: FreeValidationResult): void {
   freeControls.innerHTML = `
     <div class="free-toolbar">target ${targetButtons}</div>
     <div class="free-toolbar">tool ${toolButtons}</div>
-    <div class="free-row">
-      <label>strict eps <input type="number" step="0.000001" min="0" data-free-strict value="${freeState.strictEps}"/></label>
-      <span>${freeState.status}</span>
-    </div>
+    <div class="free-row"><span>${freeState.status}</span></div>
     ${triangleRows}
     <div class="free-row"><strong>labels</strong></div>
     ${labelRows || '<div class="free-small-status">No labels. Use mark mode and click two intersecting segments.</div>'}
@@ -1357,6 +1370,7 @@ function applyAdmissibleEditorSource(): void {
 function render(): void {
   if (shapeMode === 'free') {
     initializeFreeFromCurrentIfNeeded();
+    syncFreeStrictEps();
     refreshLabels(freeState);
     currentFreeValidation = validateFreeState(freeState);
 
@@ -1479,18 +1493,21 @@ cSlider.addEventListener('input', () => {
 strictCheckToggle.addEventListener('change', () => {
   setStrictCheckEnabled(strictCheckToggle.checked);
   syncStrictCheckControls();
+  syncFreeStrictEps(shapeMode === 'free');
   render();
 });
 
 strictEpsSlider.addEventListener('input', () => {
   setStrictEps(clampStrictEpsValue(parseFloat(strictEpsSlider.value), strictEpsUpperBound));
   syncStrictCheckControls();
+  syncFreeStrictEps(shapeMode === 'free');
   render();
 });
 
 strictEpsInput.addEventListener('change', () => {
   setStrictEps(clampStrictEpsValue(parseFloat(strictEpsInput.value), strictEpsUpperBound));
   syncStrictCheckControls();
+  syncFreeStrictEps(shapeMode === 'free');
   render();
 });
 
@@ -1498,6 +1515,7 @@ strictEpsMaxInput.addEventListener('change', () => {
   strictEpsUpperBound = clampStrictEpsUpperBound(parseFloat(strictEpsMaxInput.value));
   setStrictEps(clampStrictEpsValue(getStrictEps(), strictEpsUpperBound));
   syncStrictCheckControls();
+  syncFreeStrictEps(shapeMode === 'free');
   render();
 });
 
@@ -1608,15 +1626,6 @@ freeControls.addEventListener('click', (event) => {
 
 freeControls.addEventListener('change', (event) => {
   const target = event.target as HTMLInputElement | HTMLSelectElement;
-  if ('freeStrict' in target.dataset) {
-    freeState.strictEps = clampNonNegative(Number(target.value));
-    for (const triangle of freeState.triangles) {
-      projectTriangleToConstraints(freeState, triangle);
-    }
-    refreshLabels(freeState);
-    render();
-    return;
-  }
   const fixed = target.dataset.fixed;
   if (fixed) {
     const triangle = getTriangle(freeState, fixed as FreeTriangleId);

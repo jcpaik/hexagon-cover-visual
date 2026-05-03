@@ -1,0 +1,2 @@
+just use the same strictEps given left side of the interface. delete the strictEps in the control panel of freemode
+
