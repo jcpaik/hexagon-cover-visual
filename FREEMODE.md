@@ -132,9 +132,9 @@ edge-through-point constraint.
 
 For a \(V_i\)-triangle, Vd0 computes raw \(a,b,c\) from the farthest uncovered
 point on the three incident skeleton branches by default.  Each raw coordinate
-can instead use a marked label, or the relevant midpoint \(M_i\), when that
-point lies on the coordinate branch.  The value is measured as distance from
-\(V_i\) along the branch:
+can instead use the current vertex \(V_i\), a marked label, or the relevant
+midpoint \(M_i\), when that point lies on the coordinate branch.  The value is
+measured as distance from \(V_i\) along the branch:
 
 - \(a\) uses \([V_i,V_{i-1}]\),
 - \(b\) uses \([V_i,V_{i+1}]\),

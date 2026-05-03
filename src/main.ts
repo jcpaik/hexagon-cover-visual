@@ -1738,7 +1738,7 @@ freeControls.addEventListener('change', (event) => {
       delete triangle.vd0.rawSources[coordinate];
     } else {
       const source = decodeNamedPointRef(target.value);
-      if (source?.kind === 'M' || source?.kind === 'label') {
+      if (source?.kind === 'V' || source?.kind === 'M' || source?.kind === 'label') {
         triangle.vd0.rawSources[coordinate] = source;
       }
     }
