@@ -39,6 +39,7 @@ import {
   describeTarget,
   getSegmentByRef,
   getFreeVd0Status,
+  getFreeVd0RawSourceOptions,
   getTriangle,
   midpoint,
   namedPointLabel,
@@ -55,6 +56,7 @@ import type {
   FreeTarget,
   FreeTool,
   FreeTriangleId,
+  FreeVd0Coordinate,
   FreeVd0Mode,
   FreeValidationResult,
 } from './freeTypes';
@@ -962,6 +964,7 @@ function initializeFreeFromCurrentIfNeeded(): void {
     chain.direction,
   );
   const next = createDefaultFreeState();
+  next.strictEps = getEffectiveStrictEps();
   getTriangle(next, 'C').center = { ...triangleState.position };
   getTriangle(next, 'C').angle = triangleState.angle;
   for (const coverTriangle of result.vTriangles) {
@@ -1086,6 +1089,31 @@ function namedPointOptions(selected: FreeNamedPointRef | null): string {
   return `${options}<option value="${encodeNamedPointRef(manual)}"${selected?.kind === 'manual' ? ' selected' : ''}>manual</option>`;
 }
 
+function vd0RawSourceOptions(triangleId: FreeTriangleId, coordinate: FreeVd0Coordinate): string {
+  const triangle = getTriangle(freeState, triangleId);
+  const selected = triangle.vd0.rawSources?.[coordinate] ?? null;
+  const options = getFreeVd0RawSourceOptions(freeState, triangle, coordinate);
+  const selectedIsValid = options.some((option) => sameNamedPointRef(option.ref, selected));
+  const autoSelected = selected === null || selected === undefined;
+  const optionHtml = options.map((option) => {
+    const value = encodeNamedPointRef(option.ref);
+    const selectedAttr = sameNamedPointRef(option.ref, selected) ? ' selected' : '';
+    return `<option value="${value}"${selectedAttr}>${option.label} (${option.value.toFixed(3)})</option>`;
+  }).join('');
+  const invalidHtml = selected && !selectedIsValid
+    ? `<option value="${encodeNamedPointRef(selected)}" selected>${namedPointLabel(selected)} (invalid)</option>`
+    : '';
+  return `<option value=""${autoSelected ? ' selected' : ''}>auto</option>${optionHtml}${invalidHtml}`;
+}
+
+function formatVd0RawStatus(status: NonNullable<ReturnType<typeof getFreeVd0Status>>, maxLabel: string): string {
+  const raw = (coordinate: FreeVd0Coordinate): string => {
+    const source = status.rawSourceLabels[coordinate];
+    return `${coordinate}=${status.raw[coordinate].toFixed(3)}${source ? `(${source})` : ''}`;
+  };
+  return `raw ${raw('a')}, ${raw('b')}, ${raw('c')}; ${maxLabel}=${status.max.toFixed(3)}`;
+}
+
 function sameNamedPointRef(a: FreeNamedPointRef, b: FreeNamedPointRef | null): boolean {
   return !!b && a.kind === b.kind && a.index === b.index && a.labelId === b.labelId;
 }
@@ -1144,6 +1172,10 @@ function loadFreeSnapshot(raw: string): void {
       vd0: {
         ...defaults.triangles[index].vd0,
         ...triangle.vd0,
+        rawSources: {
+          ...defaults.triangles[index].vd0.rawSources,
+          ...triangle.vd0?.rawSources,
+        },
       },
     })) as FreeState['triangles'],
     labels: Array.isArray(parsed.labels) ? parsed.labels : [],
@@ -1153,7 +1185,22 @@ function loadFreeSnapshot(raw: string): void {
   refreshLabels(freeState);
 }
 
+function syncFreeStrictEps(projectConstraints = false): void {
+  const nextStrictEps = getEffectiveStrictEps();
+  if (freeState.strictEps === nextStrictEps) {
+    return;
+  }
+  freeState.strictEps = nextStrictEps;
+  if (projectConstraints) {
+    for (const triangle of freeState.triangles) {
+      projectTriangleToConstraints(freeState, triangle);
+    }
+    refreshLabels(freeState);
+  }
+}
+
 function autoPlaceAllFreeVd0FromControls(): void {
+  syncFreeStrictEps();
   if (!freeState.triangles.some((triangle) => triangle.id !== 'C' && triangle.vd0.enabled)) {
     return;
   }
@@ -1205,6 +1252,13 @@ function renderFreePanel(validation: FreeValidationResult): void {
     ).join('');
     const vd0Status = getFreeVd0Status(freeState, triangle);
     const vd0MaxLabel = triangle.vd0.mode === 'max-c' ? 'max c' : triangle.vd0.mode === 'max-a' ? 'max a' : 'max b';
+    const vd0RawControls = (['a', 'b', 'c'] as FreeVd0Coordinate[]).map((coordinate) => `
+      <label>${coordinate}
+        <select data-vd0-raw-source="${triangle.id}:${coordinate}"${triangle.vd0.enabled ? '' : ' disabled'}>
+          ${vd0RawSourceOptions(triangle.id, coordinate)}
+        </select>
+      </label>
+    `).join('');
     const vd0Controls = triangle.id === 'C' ? '' : `
       <label><input type="checkbox" data-vd0-enabled="${triangle.id}"${triangle.vd0.enabled ? ' checked' : ''}/>Vd0</label>
       <label>Vd0 mode
@@ -1214,7 +1268,8 @@ function renderFreePanel(validation: FreeValidationResult): void {
           <option value="max-b"${triangle.vd0.mode === 'max-b' ? ' selected' : ''}>max b from c,a</option>
         </select>
       </label>
-      ${vd0Status ? `<span class="free-small-status">raw a=${vd0Status.raw.a.toFixed(3)}, b=${vd0Status.raw.b.toFixed(3)}, c=${vd0Status.raw.c.toFixed(3)}; ${vd0MaxLabel}=${vd0Status.max.toFixed(3)}</span>` : ''}`;
+      ${vd0RawControls}
+      ${vd0Status ? `<span class="free-small-status">${formatVd0RawStatus(vd0Status, vd0MaxLabel)}</span>` : ''}`;
     const edge = triangle.edgePointConstraint;
     const manualPoint = edge?.point.kind === 'manual' ? edge.point.manualPoint : null;
     const edgeControls = `
@@ -1254,10 +1309,7 @@ function renderFreePanel(validation: FreeValidationResult): void {
   freeControls.innerHTML = `
     <div class="free-toolbar">target ${targetButtons}</div>
     <div class="free-toolbar">tool ${toolButtons}</div>
-    <div class="free-row">
-      <label>strict eps <input type="number" step="0.000001" min="0" data-free-strict value="${freeState.strictEps}"/></label>
-      <span>${freeState.status}</span>
-    </div>
+    <div class="free-row"><span>${freeState.status}</span></div>
     ${triangleRows}
     <div class="free-row"><strong>labels</strong></div>
     ${labelRows || '<div class="free-small-status">No labels. Use mark mode and click two intersecting segments.</div>'}
@@ -1357,6 +1409,7 @@ function applyAdmissibleEditorSource(): void {
 function render(): void {
   if (shapeMode === 'free') {
     initializeFreeFromCurrentIfNeeded();
+    syncFreeStrictEps();
     refreshLabels(freeState);
     currentFreeValidation = validateFreeState(freeState);
 
@@ -1479,18 +1532,21 @@ cSlider.addEventListener('input', () => {
 strictCheckToggle.addEventListener('change', () => {
   setStrictCheckEnabled(strictCheckToggle.checked);
   syncStrictCheckControls();
+  syncFreeStrictEps(shapeMode === 'free');
   render();
 });
 
 strictEpsSlider.addEventListener('input', () => {
   setStrictEps(clampStrictEpsValue(parseFloat(strictEpsSlider.value), strictEpsUpperBound));
   syncStrictCheckControls();
+  syncFreeStrictEps(shapeMode === 'free');
   render();
 });
 
 strictEpsInput.addEventListener('change', () => {
   setStrictEps(clampStrictEpsValue(parseFloat(strictEpsInput.value), strictEpsUpperBound));
   syncStrictCheckControls();
+  syncFreeStrictEps(shapeMode === 'free');
   render();
 });
 
@@ -1498,6 +1554,7 @@ strictEpsMaxInput.addEventListener('change', () => {
   strictEpsUpperBound = clampStrictEpsUpperBound(parseFloat(strictEpsMaxInput.value));
   setStrictEps(clampStrictEpsValue(getStrictEps(), strictEpsUpperBound));
   syncStrictCheckControls();
+  syncFreeStrictEps(shapeMode === 'free');
   render();
 });
 
@@ -1599,6 +1656,12 @@ freeControls.addEventListener('click', (event) => {
       if (triangle.edgePointConstraint?.point.kind === 'label' && triangle.edgePointConstraint.point.labelId === id) {
         triangle.edgePointConstraint = null;
       }
+      for (const coordinate of ['a', 'b', 'c'] as FreeVd0Coordinate[]) {
+        const source = triangle.vd0.rawSources?.[coordinate];
+        if (source?.kind === 'label' && source.labelId === id) {
+          delete triangle.vd0.rawSources[coordinate];
+        }
+      }
     }
     freeState.status = `Deleted ${id}.`;
     refreshLabels(freeState);
@@ -1608,15 +1671,6 @@ freeControls.addEventListener('click', (event) => {
 
 freeControls.addEventListener('change', (event) => {
   const target = event.target as HTMLInputElement | HTMLSelectElement;
-  if ('freeStrict' in target.dataset) {
-    freeState.strictEps = clampNonNegative(Number(target.value));
-    for (const triangle of freeState.triangles) {
-      projectTriangleToConstraints(freeState, triangle);
-    }
-    refreshLabels(freeState);
-    render();
-    return;
-  }
   const fixed = target.dataset.fixed;
   if (fixed) {
     const triangle = getTriangle(freeState, fixed as FreeTriangleId);
@@ -1665,6 +1719,30 @@ freeControls.addEventListener('change', (event) => {
       }
       render();
     }
+    return;
+  }
+  const vd0RawSource = target.dataset.vd0RawSource;
+  if (vd0RawSource) {
+    const [id, coordinate] = vd0RawSource.split(':') as [FreeTriangleId, FreeVd0Coordinate];
+    const triangle = getTriangle(freeState, id);
+    if (coordinate !== 'a' && coordinate !== 'b' && coordinate !== 'c') {
+      return;
+    }
+    if (!triangle.vd0.rawSources) {
+      triangle.vd0.rawSources = {};
+    }
+    if (target.value === '') {
+      delete triangle.vd0.rawSources[coordinate];
+    } else {
+      const source = decodeNamedPointRef(target.value);
+      if (source?.kind === 'M' || source?.kind === 'label') {
+        triangle.vd0.rawSources[coordinate] = source;
+      }
+    }
+    if (triangle.vd0.enabled) {
+      autoPlaceAllFreeVd0FromControls();
+    }
+    render();
     return;
   }
   const edgeIndexTarget = target.dataset.edgeIndex;
