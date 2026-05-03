@@ -128,6 +128,21 @@ highlighted in the figure.  This highlight is temporary bookkeeping only; it
 does not add a geometric constraint unless a labeled point is later used in an
 edge-through-point constraint.
 
+## Vd0 Raw Sources
+
+For a \(V_i\)-triangle, Vd0 computes raw \(a,b,c\) from the farthest uncovered
+point on the three incident skeleton branches by default.  Each raw coordinate
+can instead use a marked label, or the relevant midpoint \(M_i\), when that
+point lies on the coordinate branch.  The value is measured as distance from
+\(V_i\) along the branch:
+
+- \(a\) uses \([V_i,V_{i-1}]\),
+- \(b\) uses \([V_i,V_{i+1}]\),
+- \(c\) uses \([V_i,O]\).
+
+If a selected raw source later becomes invalid or leaves the branch, Vd0 falls
+back to the automatic farthest-uncovered value for that coordinate.
+
 ## Interface Conventions
 
 Free mode is separate from the \(g_c\)-chain interface.  When Free mode is

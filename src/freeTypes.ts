@@ -4,6 +4,7 @@ export type FreeTriangleId = 'C' | 'V0' | 'V1' | 'V2' | 'V3' | 'V4' | 'V5';
 export type FreeTarget = 'S_HALF' | 'S';
 export type FreeTool = 'move' | 'mark';
 export type FreeVd0Mode = 'max-c' | 'max-a' | 'max-b';
+export type FreeVd0Coordinate = 'a' | 'b' | 'c';
 export type NamedPointKind = 'O' | 'M' | 'V' | 'label' | 'manual';
 export type FreeSegmentKind = 'hex-edge' | 'half-diagonal' | 'triangle-edge';
 
@@ -36,6 +37,7 @@ export interface FreeEdgePointConstraint {
 export interface FreeVd0Constraint {
   enabled: boolean;
   mode: FreeVd0Mode;
+  rawSources: Partial<Record<FreeVd0Coordinate, FreeNamedPointRef>>;
 }
 
 export interface FreeTriangleState {

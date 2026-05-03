@@ -11,6 +11,7 @@ import {
   type FreeTarget,
   type FreeTriangleId,
   type FreeTriangleState,
+  type FreeVd0Coordinate,
   type FreeVd0Mode,
   type FreeValidationResult,
   type FreeValidationSegment,
@@ -23,7 +24,7 @@ const CONSTRAINT_ITERS = 8;
 const VD0_SAMPLES = 512;
 const VD0_SEARCH_STEPS = 48;
 const EPS = 1e-9;
-const VD0_FIT_SIDE_TOLERANCE = 1e-6;
+const VD0_FIT_SIDE_TOLERANCE = 1e-8;
 
 const FREE_COLORS: Record<FreeTriangleId, string> = {
   C: '#0ea5e9',
@@ -52,7 +53,7 @@ export function triangleVertices(center: Point, angle: number): [Point, Point, P
 
 export function createDefaultFreeState(): FreeState {
   const triangles: FreeTriangleState[] = [
-    { id: 'C', center: { x: 0, y: 0 }, angle: 0, fixed: false, hidden: false, midpointConstraints: Array(6).fill(false), edgePointConstraint: null, vd0: { enabled: false, mode: 'max-c' } },
+    { id: 'C', center: { x: 0, y: 0 }, angle: 0, fixed: false, hidden: false, midpointConstraints: Array(6).fill(false), edgePointConstraint: null, vd0: { enabled: false, mode: 'max-c', rawSources: {} } },
     ...HEXAGON_VERTICES.map((vertex, index) => ({
       id: `V${index}` as FreeTriangleId,
       center: { x: vertex.x * 0.78, y: vertex.y * 0.78 },
@@ -61,7 +62,7 @@ export function createDefaultFreeState(): FreeState {
       hidden: false,
       midpointConstraints: Array(6).fill(false),
       edgePointConstraint: null,
-      vd0: { enabled: false, mode: 'max-c' as FreeVd0Mode },
+      vd0: { enabled: false, mode: 'max-c' as FreeVd0Mode, rawSources: {} },
     })),
   ];
 
@@ -397,16 +398,83 @@ function farthestGapEndExcludingTriangle(
   return gaps.reduce((max, gap) => Math.max(max, gap[1]), 0);
 }
 
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function branchForVd0Coordinate(triangle: FreeTriangleState, coordinate: FreeVd0Coordinate): { start: Point; end: Point } | null {
+  if (triangle.id === 'C') return null;
+  const index = Number(triangle.id.slice(1));
+  const vertex = HEXAGON_VERTICES[index];
+  if (coordinate === 'a') return { start: vertex, end: HEXAGON_VERTICES[(index + 5) % 6] };
+  if (coordinate === 'b') return { start: vertex, end: HEXAGON_VERTICES[(index + 1) % 6] };
+  return { start: vertex, end: { x: 0, y: 0 } };
+}
+
+function segmentParameter(start: Point, end: Point, point: Point, tolerance: number): number | null {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= EPS) return null;
+  const rawT = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared;
+  const t = clamp01(rawT);
+  const closest = { x: start.x + t * dx, y: start.y + t * dy };
+  const distance = Math.hypot(point.x - closest.x, point.y - closest.y);
+  if (rawT < -tolerance || rawT > 1 + tolerance || distance > tolerance) {
+    return null;
+  }
+  return t;
+}
+
+function resolvedVd0RawSourceValue(
+  state: FreeState,
+  triangle: FreeTriangleState,
+  coordinate: FreeVd0Coordinate,
+  ref: FreeNamedPointRef | null | undefined,
+): number | null {
+  if (!ref) return null;
+  const branch = branchForVd0Coordinate(triangle, coordinate);
+  const point = resolveNamedPoint(state, ref);
+  if (!branch || !point) return null;
+  return segmentParameter(branch.start, branch.end, point, Math.max(1e-5, state.strictEps * 4));
+}
+
+export interface FreeVd0RawSourceOption {
+  ref: FreeNamedPointRef;
+  label: string;
+  value: number;
+}
+
+export function getFreeVd0RawSourceOptions(
+  state: FreeState,
+  triangle: FreeTriangleState,
+  coordinate: FreeVd0Coordinate,
+): FreeVd0RawSourceOption[] {
+  if (triangle.id === 'C') return [];
+  const refs: FreeNamedPointRef[] = [
+    ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'M', index }) as FreeNamedPointRef),
+    ...state.labels.map((label) => ({ kind: 'label', labelId: label.id }) as FreeNamedPointRef),
+  ];
+  return refs.flatMap((ref) => {
+    const value = resolvedVd0RawSourceValue(state, triangle, coordinate, ref);
+    return value === null ? [] : [{ ref, label: namedPointLabel(ref), value }];
+  });
+}
+
 export interface FreeVd0Status {
   ok: boolean;
   message: string | null;
+  warnings: string[];
   raw: { a: number; b: number; c: number };
+  rawSourceLabels: Partial<Record<FreeVd0Coordinate, string>>;
   target: { a: number; b: number; c: number };
   max: number;
 }
 
 interface FreeVd0Target {
   raw: { a: number; b: number; c: number };
+  rawSourceLabels: Partial<Record<FreeVd0Coordinate, string>>;
+  warnings: string[];
   a: number;
   b: number;
   c: number;
@@ -419,8 +487,10 @@ export function getFreeVd0Status(state: FreeState, triangle: FreeTriangleState):
   if (!target) return null;
   return {
     ok: true,
-    message: null,
+    message: target.warnings.length > 0 ? target.warnings.join(', ') : null,
+    warnings: target.warnings,
     raw: target.raw,
+    rawSourceLabels: target.rawSourceLabels,
     target: { a: target.a, b: target.b, c: target.c },
     max: target.max,
   };
@@ -433,6 +503,33 @@ function pointOnSegment(start: Point, end: Point, value: number): Point {
   };
 }
 
+function vd0TargetPoints(index: number, a: number, b: number, c: number): Point[] {
+  const vertex = HEXAGON_VERTICES[index];
+  return [
+    vertex,
+    pointOnSegment(vertex, HEXAGON_VERTICES[(index + 5) % 6], a),
+    pointOnSegment(vertex, HEXAGON_VERTICES[(index + 1) % 6], b),
+    pointOnSegment(vertex, { x: 0, y: 0 }, c),
+  ];
+}
+
+function closedPointInPlacedUnitTriangle(point: Point, triangle: FreeTriangleState): boolean {
+  const vertices = triangleVertices(triangle.center, triangle.angle);
+  for (let i = 0; i < 3; i++) {
+    const a = vertices[i];
+    const b = vertices[(i + 1) % 3];
+    const cross = (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
+    if (cross < 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function placedUnitTriangleContainsPoints(points: Point[], triangle: FreeTriangleState): boolean {
+  return points.every((point) => closedPointInPlacedUnitTriangle(point, triangle));
+}
+
 function getFreeVd0Target(state: FreeState, triangle: FreeTriangleState): FreeVd0Target | null {
   if (triangle.id === 'C' || !triangle.vd0.enabled) {
     return null;
@@ -440,9 +537,29 @@ function getFreeVd0Target(state: FreeState, triangle: FreeTriangleState): FreeVd
 
   const index = Number(triangle.id.slice(1));
   const vertex = HEXAGON_VERTICES[index];
-  let a = farthestGapEndExcludingTriangle(state, triangle.id, vertex, HEXAGON_VERTICES[(index + 5) % 6]);
-  let b = farthestGapEndExcludingTriangle(state, triangle.id, vertex, HEXAGON_VERTICES[(index + 1) % 6]);
-  let c = farthestGapEndExcludingTriangle(state, triangle.id, vertex, { x: 0, y: 0 });
+  const rawSourceLabels: Partial<Record<FreeVd0Coordinate, string>> = {};
+  const warnings: string[] = [];
+  const rawSources = triangle.vd0.rawSources ?? {};
+  const automatic = {
+    a: farthestGapEndExcludingTriangle(state, triangle.id, vertex, HEXAGON_VERTICES[(index + 5) % 6]),
+    b: farthestGapEndExcludingTriangle(state, triangle.id, vertex, HEXAGON_VERTICES[(index + 1) % 6]),
+    c: farthestGapEndExcludingTriangle(state, triangle.id, vertex, { x: 0, y: 0 }),
+  };
+  const manualValue = (coordinate: FreeVd0Coordinate): number => {
+    const source = rawSources[coordinate];
+    if (!source) return automatic[coordinate];
+    const value = resolvedVd0RawSourceValue(state, triangle, coordinate, source);
+    const label = namedPointLabel(source);
+    if (value === null) {
+      warnings.push(`${coordinate} source ${label} invalid; using auto`);
+      return automatic[coordinate];
+    }
+    rawSourceLabels[coordinate] = label;
+    return value;
+  };
+  let a = manualValue('a');
+  let b = manualValue('b');
+  let c = manualValue('c');
   const raw = { a, b, c };
   const max = maxClassicalCoordinate(triangle.vd0.mode, a, b, c, state.strictEps);
 
@@ -452,16 +569,13 @@ function getFreeVd0Target(state: FreeState, triangle: FreeTriangleState): FreeVd
 
   return {
     raw,
+    rawSourceLabels,
+    warnings,
     a,
     b,
     c,
     max,
-    points: [
-      vertex,
-      pointOnSegment(vertex, HEXAGON_VERTICES[(index + 5) % 6], a),
-      pointOnSegment(vertex, HEXAGON_VERTICES[(index + 1) % 6], b),
-      pointOnSegment(vertex, { x: 0, y: 0 }, c),
-    ],
+    points: vd0TargetPoints(index, a, b, c),
   };
 }
 
@@ -471,15 +585,53 @@ export function autoPlaceFreeVd0Triangle(state: FreeState, triangle: FreeTriangl
     return { ok: true };
   }
 
-  const fitted = fitTriangle(triangle.id, target.points, colorForTriangle(triangle.id));
-  if (fitted.side > 1 + VD0_FIT_SIDE_TOLERANCE) {
-    return { ok: false, reason: `Vd0 auto-place failed; fitted side=${fitted.side.toFixed(6)}.` };
+  const index = Number(triangle.id.slice(1));
+  const fitTarget = (a: number, b: number, c: number): { points: Point[]; fitted: CoverTriangle; placedTriangle: FreeTriangleState } => {
+    const points = vd0TargetPoints(index, a, b, c);
+    const fitted = fitTriangle(triangle.id, points, colorForTriangle(triangle.id));
+    return {
+      points,
+      fitted,
+      placedTriangle: {
+        ...triangle,
+        center: fitted.center,
+        angle: fitted.phi - Math.PI / 2,
+      },
+    };
+  };
+  const fitsUnit = (candidate: ReturnType<typeof fitTarget>): boolean =>
+    candidate.fitted.side <= 1 + VD0_FIT_SIDE_TOLERANCE
+    && placedUnitTriangleContainsPoints(candidate.points, candidate.placedTriangle);
+
+  let placement = fitTarget(target.a, target.b, target.c);
+  if (!fitsUnit(placement)) {
+    let lo = 0;
+    let hi = target.max;
+    let best: typeof placement | null = null;
+    for (let i = 0; i < VD0_SEARCH_STEPS; i++) {
+      const mid = (lo + hi) / 2;
+      const candidate = fitTarget(
+        triangle.vd0.mode === 'max-a' ? mid : target.a,
+        triangle.vd0.mode === 'max-b' ? mid : target.b,
+        triangle.vd0.mode === 'max-c' ? mid : target.c,
+      );
+      if (fitsUnit(candidate)) {
+        lo = mid;
+        best = candidate;
+      } else {
+        hi = mid;
+      }
+    }
+    if (!best) {
+      return { ok: false, reason: `Vd0 auto-place failed; fitted side=${placement.fitted.side.toFixed(6)}.` };
+    }
+    placement = best;
   }
 
   triangle.fixed = false;
   triangle.hidden = false;
-  triangle.center = fitted.center;
-  triangle.angle = fitted.phi - Math.PI / 2;
+  triangle.center = placement.fitted.center;
+  triangle.angle = placement.fitted.phi - Math.PI / 2;
   return { ok: true };
 }
 
