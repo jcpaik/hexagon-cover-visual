@@ -198,4 +198,5 @@ For target \(S_{1/2}\), a free-mode configuration is valid when:
 
 Fixed triangles remain part of the covering test.  Hidden triangles also remain
 part of the covering test; hiding only removes them from the canvas hit target
-and visual clutter.  A triangle can be hidden only when it is fixed.
+and visual clutter.  Hiding an unfixed triangle automatically fixes it.  If a
+hidden triangle is unfixed, it is shown again.

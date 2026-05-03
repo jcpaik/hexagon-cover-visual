@@ -1292,7 +1292,7 @@ function renderFreePanel(validation: FreeValidationResult): void {
       <div class="free-triangle-row${triangle.id === freeState.selectedTriangleId ? ' is-selected' : ''}${status?.ok === false ? ' is-bad' : ''}">
         <button type="button" class="free-button free-name" data-select-triangle="${triangle.id}">${triangle.id}</button>
         <label><input type="checkbox" data-fixed="${triangle.id}"${triangle.fixed ? ' checked' : ''}/>fixed</label>
-        <label><input type="checkbox" data-hidden="${triangle.id}"${triangle.hidden ? ' checked' : ''}${triangle.fixed ? '' : ' disabled'}/>hidden</label>
+        <label><input type="checkbox" data-hidden="${triangle.id}"${triangle.hidden ? ' checked' : ''}/>hidden</label>
         ${midpoints}
         ${vd0Controls}
         ${edgeControls}
@@ -1684,7 +1684,10 @@ freeControls.addEventListener('change', (event) => {
   const hidden = target.dataset.hidden;
   if (hidden) {
     const triangle = getTriangle(freeState, hidden as FreeTriangleId);
-    triangle.hidden = triangle.fixed && (target as HTMLInputElement).checked;
+    triangle.hidden = (target as HTMLInputElement).checked;
+    if (triangle.hidden) {
+      triangle.fixed = true;
+    }
     render();
     return;
   }
