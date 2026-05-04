@@ -2,7 +2,7 @@ import type { Point } from './types';
 
 export type FreeTriangleId = 'C' | 'V0' | 'V1' | 'V2' | 'V3' | 'V4' | 'V5';
 export type FreeTarget = 'S_HALF' | 'S' | 'LOTUS';
-export type FreeTool = 'move' | 'd-mark' | 's-mark';
+export type FreeTool = 'move' | 'd-mark' | 's-mark' | 'sample';
 export type FreeVd0Mode = 'max-c' | 'max-a' | 'max-b';
 export type FreeVd0Coordinate = 'a' | 'b' | 'c';
 export type NamedPointKind = 'O' | 'M' | 'V' | 'label' | 'manual';
@@ -61,6 +61,7 @@ export interface FreeState {
   labels: FreeLabel[];
   selectedSegments: FreeSegmentRef[];
   status: string;
+  sampling?: import('./halfSkeletonFrontier').SamplingStore;
 }
 
 export interface FreeSegment {

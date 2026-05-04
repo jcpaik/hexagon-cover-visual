@@ -76,6 +76,7 @@ export function createDefaultFreeState(): FreeState {
     labels: [],
     selectedSegments: [],
     status: 'Free mode ready.',
+    sampling: { v: [], c: [], rejected: [] },
   };
 }
 

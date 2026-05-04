@@ -356,6 +356,118 @@ canvas {
   overflow-wrap: anywhere;
 }
 
+.half-frontier-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  padding: 8px;
+}
+
+.half-frontier-title {
+  font-weight: 700;
+  color: #334155;
+}
+
+.half-frontier-subtitle {
+  color: #475569;
+  font-weight: 700;
+}
+
+.half-frontier-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.half-frontier-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.half-frontier-controls select,
+.half-frontier-controls input {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  padding: 4px 6px;
+}
+
+.half-frontier-controls select {
+  max-width: 270px;
+}
+
+.half-frontier-controls input {
+  width: 82px;
+}
+
+.half-frontier-plot {
+  width: 100%;
+  height: auto;
+  max-height: 240px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.half-frontier-plot line {
+  stroke: #94a3b8;
+  stroke-width: 1;
+}
+
+.half-frontier-plot text {
+  fill: #64748b;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.half-frontier-plot polyline {
+  fill: none;
+  stroke: #0f766e;
+  stroke-width: 2;
+}
+
+.half-frontier-plot circle {
+  fill: #0f766e;
+  opacity: 0.72;
+}
+
+.half-frontier-plot .half-frontier-guide {
+  stroke: #f59e0b;
+  stroke-dasharray: 4 4;
+}
+
+.half-frontier-plot .half-frontier-selected {
+  fill: #f59e0b;
+  opacity: 1;
+}
+
+.half-frontier-plot .half-frontier-interval {
+  stroke: #0f766e;
+  stroke-width: 3;
+  stroke-linecap: round;
+  opacity: 0.38;
+}
+
+.half-frontier-plot .half-frontier-interval.is-maximal {
+  stroke-width: 6;
+  opacity: 0.9;
+}
+
+.half-frontier-plot .half-frontier-endpoint {
+  fill: #0f766e;
+  stroke: #0f766e;
+  opacity: 0.58;
+}
+
+.half-frontier-plot .half-frontier-endpoint.is-maximal {
+  opacity: 1;
+  stroke-width: 2;
+}
+
 #free-state-panel {
   border: 1px solid #cbd5e1;
   background: #fff;
