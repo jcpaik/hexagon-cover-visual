@@ -1,6 +1,6 @@
 import './style.css';
 import type { Point, ShapeMode, TriangleState } from './types';
-import { config, mathToCanvas, setCanvasSize } from './coords';
+import { config, mathToCanvas, scaleToCanvas, setCanvasSize } from './coords';
 import { drawHexagon, HEXAGON_VERTICES } from './hexagon';
 import {
   computeChainValuesForLocalCs,
@@ -41,6 +41,7 @@ import {
   getFreeVd0Status,
   getFreeVd0RawSourceOptions,
   getTriangle,
+  lotusComponents,
   midpoint,
   namedPointLabel,
   projectTriangleToConstraints,
@@ -53,15 +54,32 @@ import { setupFreeInteraction } from './freeInteraction';
 import type {
   FreeNamedPointRef,
   FreeLabel,
+  FreeSegment,
   FreeSegmentRef,
   FreeState,
   FreeTarget,
   FreeTool,
   FreeTriangleId,
+  FreeValidationSegment,
   FreeVd0Coordinate,
   FreeVd0Mode,
   FreeValidationResult,
 } from './freeTypes';
+import {
+  EMPTY_SAMPLING_STORE,
+  addRejectedSample,
+  addSample,
+  classifyCSample,
+  classifyV0Sample,
+  summarizeCSamples,
+  summarizeVSamples,
+  type CSample,
+  type CCaseSummary,
+  type RejectedSample,
+  type SamplingStore,
+  type VCaseSummary,
+  type VSample,
+} from './halfSkeletonFrontier';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -134,6 +152,9 @@ let freeState: FreeState = createDefaultFreeState();
 let freeInitializedFromCurrent = false;
 let currentFreeValidation: FreeValidationResult | null = null;
 let freeInteractionApi: ReturnType<typeof setupFreeInteraction> | null = null;
+let sampleModeSavedTriangleStates: Partial<Record<FreeTriangleId, { hidden: boolean; fixed: boolean }>> | null = null;
+let currentV0Sample: VSample | RejectedSample | null = null;
+let currentCSample: CSample | RejectedSample | null = null;
 
 interface ControllerSnapshot {
   version: 3;
@@ -181,6 +202,14 @@ function syncCanvasSizes(): void {
 
 function formatTuple(values: number[]): string {
   return `(${values.map((value) => value.toFixed(3)).join(', ')})`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function drawMarker(ctx2d: CanvasRenderingContext2D, x: number, y: number, fill: string, stroke?: string): void {
@@ -756,19 +785,29 @@ function drawCoverTriangleOverlay(ctx2d: CanvasRenderingContext2D, triangles: Co
   ctx2d.restore();
 }
 
-function drawCoverageGaps(ctx2d: CanvasRenderingContext2D, segments: CoverSegmentReport[]): void {
+function drawCoverageGaps(ctx2d: CanvasRenderingContext2D, segments: Array<CoverSegmentReport | FreeValidationSegment>): void {
   ctx2d.save();
   ctx2d.strokeStyle = '#dc2626';
   ctx2d.lineWidth = 5;
   ctx2d.lineCap = 'round';
 
   for (const segment of segments) {
+    if ('arc' in segment && segment.arc) {
+      for (const [gapStart, gapEnd] of segment.gaps) {
+        drawArcInterval(ctx2d, segment.arc, gapStart, gapEnd);
+      }
+      continue;
+    }
     const start = segment.kind === 'edge'
       ? HEXAGON_VERTICES[segment.index]
-      : { x: 0, y: 0 };
+      : segment.kind === 'diag'
+        ? { x: 0, y: 0 }
+        : lotusComponents().find((component) => component.label === ('label' in segment ? segment.label : undefined))?.start ?? { x: 0, y: 0 };
     const end = segment.kind === 'edge'
       ? HEXAGON_VERTICES[(segment.index + 1) % 6]
-      : HEXAGON_VERTICES[segment.index];
+      : segment.kind === 'diag'
+        ? HEXAGON_VERTICES[segment.index]
+        : lotusComponents().find((component) => component.label === ('label' in segment ? segment.label : undefined))?.end ?? { x: 0, y: 0 };
 
     for (const [gapStart, gapEnd] of segment.gaps) {
       const canvasStart = mathToCanvas(segmentPoint(start, end, gapStart));
@@ -780,6 +819,40 @@ function drawCoverageGaps(ctx2d: CanvasRenderingContext2D, segments: CoverSegmen
     }
   }
 
+  ctx2d.restore();
+}
+
+function drawArcInterval(
+  ctx2d: CanvasRenderingContext2D,
+  arc: NonNullable<FreeSegment['arc']>,
+  startT: number,
+  endT: number,
+): void {
+  const center = mathToCanvas(arc.center);
+  const startAngle = -(arc.startAngle + arc.sweep * startT);
+  const endAngle = -(arc.startAngle + arc.sweep * endT);
+  ctx2d.beginPath();
+  ctx2d.arc(center.x, center.y, scaleToCanvas(arc.radius), startAngle, endAngle, arc.sweep > 0);
+  ctx2d.stroke();
+}
+
+function drawLotusTarget(ctx2d: CanvasRenderingContext2D): void {
+  ctx2d.save();
+  ctx2d.strokeStyle = '#0f766e';
+  ctx2d.lineWidth = 3;
+  ctx2d.lineCap = 'round';
+  for (const component of lotusComponents()) {
+    if (component.arc) {
+      drawArcInterval(ctx2d, component.arc, 0, 1);
+    } else {
+      const start = mathToCanvas(component.start);
+      const end = mathToCanvas(component.end);
+      ctx2d.beginPath();
+      ctx2d.moveTo(start.x, start.y);
+      ctx2d.lineTo(end.x, end.y);
+      ctx2d.stroke();
+    }
+  }
   ctx2d.restore();
 }
 
@@ -981,6 +1054,9 @@ function initializeFreeFromCurrentIfNeeded(): void {
 
 function drawFreeMode(ctx2d: CanvasRenderingContext2D, validation: FreeValidationResult): void {
   ctx2d.save();
+  if (freeState.target === 'LOTUS') {
+    drawLotusTarget(ctx2d);
+  }
   for (const triangle of freeState.triangles) {
     if (triangle.hidden) {
       continue;
@@ -1151,14 +1227,14 @@ function clampInteger(value: string | undefined, min: number, max: number): numb
 }
 
 function formatFreeSnapshot(): string {
-  return JSON.stringify({ version: 1, ...freeState }, null, 2);
+  return JSON.stringify({ version: 3, ...freeState }, null, 2);
 }
 
 function isFreeSegmentRef(value: unknown): value is FreeSegmentRef {
   if (!value || typeof value !== 'object') return false;
   const ref = value as Partial<FreeSegmentRef>;
   if (typeof ref.index !== 'number' || !Number.isInteger(ref.index)) return false;
-  if (ref.kind === 'hex-edge' || ref.kind === 'half-diagonal') return true;
+  if (ref.kind === 'hex-edge' || ref.kind === 'half-diagonal' || ref.kind === 'lotus-arc') return true;
   return ref.kind === 'triangle-edge' && (
     ref.triangleId === 'C' ||
     ref.triangleId === 'V0' ||
@@ -1171,11 +1247,19 @@ function isFreeSegmentRef(value: unknown): value is FreeSegmentRef {
 }
 
 function isFreeTool(value: unknown): value is FreeTool {
-  return value === 'move' || value === 'd-mark' || value === 's-mark';
+  return value === 'move' || value === 'd-mark' || value === 's-mark' || value === 'sample';
+}
+
+function isFreeTarget(value: unknown): value is FreeTarget {
+  return value === 'S_HALF' || value === 'S' || value === 'LOTUS';
 }
 
 function isFixedFreeSegmentRef(value: unknown): value is FreeSegmentRef {
   return isFreeSegmentRef(value) && (value.kind === 'hex-edge' || value.kind === 'half-diagonal');
+}
+
+function isStaticFreeLabelRef(value: unknown): boolean {
+  return isFixedFreeSegmentRef(value) || (isFreeSegmentRef(value) && value.kind === 'lotus-arc');
 }
 
 function isFreeLabel(value: unknown): value is FreeLabel {
@@ -1193,8 +1277,18 @@ function isFreeLabel(value: unknown): value is FreeLabel {
     return isFreeSegmentRef(label.first) && isFreeSegmentRef(label.second);
   }
   if (label.point === null) return false;
-  return (label.first === null || isFixedFreeSegmentRef(label.first)) &&
-    (label.second === null || isFixedFreeSegmentRef(label.second));
+  const first = label.first;
+  const second = label.second;
+  if (
+    isFreeSegmentRef(first) &&
+    isFreeSegmentRef(second) &&
+    ((first.kind === 'lotus-arc' && second.kind === 'triangle-edge') ||
+      (first.kind === 'triangle-edge' && second.kind === 'lotus-arc'))
+  ) {
+    return true;
+  }
+  return (first === null || first === undefined || isStaticFreeLabelRef(first)) &&
+    (second === null || second === undefined || isStaticFreeLabelRef(second));
 }
 
 function setFreeStateStatus(text: string, isError = false): void {
@@ -1202,10 +1296,40 @@ function setFreeStateStatus(text: string, isError = false): void {
   freeStateStatus.style.color = isError ? '#b91c1c' : '#475569';
 }
 
+function sanitizeSamplingStore(value: unknown): SamplingStore {
+  if (!value || typeof value !== 'object') return { v: [], c: [], rejected: [] };
+  const raw = value as Partial<SamplingStore>;
+  const v = Array.isArray(raw.v) ? raw.v.filter((sample): sample is VSample =>
+    sample?.kind === 'v' &&
+    typeof sample.caseId === 'string' &&
+    typeof sample.label === 'string' &&
+    typeof sample.a === 'number' &&
+    typeof sample.b === 'number',
+  ) : [];
+  const c = Array.isArray(raw.c) ? raw.c.filter((sample): sample is CSample =>
+    sample?.kind === 'c' &&
+    (sample.caseId === 'ce1-m0' || sample.caseId === 'ce2-m0') &&
+    typeof sample.label === 'string' &&
+    typeof sample.edge01?.start === 'number' &&
+    typeof sample.edge01?.end === 'number' &&
+    (
+      sample.caseId === 'ce1-m0' ||
+      (typeof sample.edge50?.start === 'number' && typeof sample.edge50?.end === 'number')
+    ),
+  ) : [];
+  const rejected = Array.isArray(raw.rejected) ? raw.rejected.filter((sample): sample is RejectedSample =>
+    (sample?.triangleId === 'C' || sample?.triangleId === 'V0') && typeof sample.reason === 'string',
+  ) : [];
+  return { v, c, rejected };
+}
+
 function loadFreeSnapshot(raw: string): void {
   const parsed = JSON.parse(raw) as Partial<FreeState> & { version?: number };
-  if (parsed.version !== 1 || !Array.isArray(parsed.triangles) || parsed.triangles.length !== 7) {
+  if ((parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) || !Array.isArray(parsed.triangles) || parsed.triangles.length !== 7) {
     throw new Error('Invalid free snapshot.');
+  }
+  if (parsed.target !== undefined && !isFreeTarget(parsed.target)) {
+    throw new Error('Invalid free snapshot target.');
   }
   if (parsed.tool !== undefined && !isFreeTool(parsed.tool)) {
     throw new Error('Invalid free snapshot tool.');
@@ -1221,6 +1345,7 @@ function loadFreeSnapshot(raw: string): void {
   freeState = {
     ...defaults,
     ...parsed,
+    target: parsed.version === 1 && parsed.target === 'LOTUS' ? defaults.target : parsed.target ?? defaults.target,
     triangles: parsed.triangles.map((triangle, index) => ({
       ...defaults.triangles[index],
       ...triangle,
@@ -1235,7 +1360,9 @@ function loadFreeSnapshot(raw: string): void {
     })) as FreeState['triangles'],
     labels,
     selectedSegments: [],
+    sampling: sanitizeSamplingStore(parsed.sampling),
   } as FreeState;
+  sampleModeSavedTriangleStates = null;
   freeInitializedFromCurrent = true;
   refreshLabels(freeState);
 }
@@ -1254,8 +1381,96 @@ function syncFreeStrictEps(projectConstraints = false): void {
   }
 }
 
+function samplingStore(): SamplingStore {
+  if (!freeState.sampling) {
+    freeState.sampling = { ...EMPTY_SAMPLING_STORE, v: [], c: [], rejected: [] };
+  }
+  return freeState.sampling;
+}
+
+function enterSampleMode(): void {
+  if (!sampleModeSavedTriangleStates) {
+    sampleModeSavedTriangleStates = {};
+    for (const triangle of freeState.triangles) {
+      if (triangle.id !== 'C' && triangle.id !== 'V0') {
+        sampleModeSavedTriangleStates[triangle.id] = { hidden: triangle.hidden, fixed: triangle.fixed };
+      }
+    }
+  }
+  for (const triangle of freeState.triangles) {
+    if (triangle.id === 'C' || triangle.id === 'V0') {
+      triangle.hidden = false;
+      triangle.fixed = false;
+      continue;
+    }
+    triangle.hidden = true;
+    triangle.fixed = true;
+  }
+  if (freeState.selectedTriangleId !== 'C' && freeState.selectedTriangleId !== 'V0') {
+    freeState.selectedTriangleId = 'V0';
+  }
+  freeState.selectedSegments = [];
+}
+
+function leaveSampleMode(): void {
+  if (!sampleModeSavedTriangleStates) return;
+  for (const triangle of freeState.triangles) {
+    const saved = sampleModeSavedTriangleStates[triangle.id];
+    if (!saved) continue;
+    triangle.hidden = saved.hidden;
+    triangle.fixed = saved.fixed;
+  }
+  sampleModeSavedTriangleStates = null;
+}
+
+function setFreeTool(nextTool: FreeTool): void {
+  if (freeState.tool === 'sample' && nextTool !== 'sample') {
+    leaveSampleMode();
+  }
+  freeState.tool = nextTool;
+  if (nextTool === 'sample') {
+    enterSampleMode();
+    freeState.status = 'Sample mode: move or rotate C and V0 to record live samples.';
+  } else if (nextTool === 'd-mark') {
+    freeState.status = 'D-mark mode: click two intersecting segments.';
+  } else if (nextTool === 's-mark') {
+    freeState.status = 'S-mark mode: click two intersecting segments.';
+  } else {
+    freeState.status = 'Move mode: drag selected triangles.';
+  }
+}
+
+function captureCurrentSample(): void {
+  if (freeState.tool !== 'sample') return;
+  enterSampleMode();
+  const store = samplingStore();
+  const v0 = getTriangle(freeState, 'V0');
+  const c = getTriangle(freeState, 'C');
+  const vResult = classifyV0Sample(triangleVertices(v0.center, v0.angle), freeState.strictEps);
+  const cResult = classifyCSample(triangleVertices(c.center, c.angle), freeState.strictEps);
+
+  if (vResult.ok) {
+    freeState.sampling = addSample(store, vResult.sample);
+    currentV0Sample = vResult.sample;
+  } else {
+    freeState.sampling = addRejectedSample(store, vResult.rejected);
+    currentV0Sample = vResult.rejected;
+  }
+
+  if (cResult.ok) {
+    freeState.sampling = addSample(samplingStore(), cResult.sample);
+    currentCSample = cResult.sample;
+  } else {
+    freeState.sampling = addRejectedSample(samplingStore(), cResult.rejected);
+    currentCSample = cResult.rejected;
+  }
+}
+
 function autoPlaceAllFreeVd0FromControls(): void {
   syncFreeStrictEps();
+  if (freeState.target === 'LOTUS') {
+    return;
+  }
   if (!freeState.triangles.some((triangle) => triangle.id !== 'C' && triangle.vd0.enabled)) {
     return;
   }
@@ -1277,7 +1492,14 @@ function autoPlaceAllFreeVd0FromControls(): void {
 function summarizeFreeValidation(validation: FreeValidationResult): string {
   const gapSegments = validation.segments
     .filter((segment) => segment.gaps.length > 0)
-    .map((segment) => `${segment.kind} ${segment.index}`);
+    .map((segment) => {
+      if (freeState.target === 'LOTUS') {
+        const firstGap = segment.gaps[0];
+        const gapText = firstGap ? ` [${firstGap[0].toFixed(3)}, ${firstGap[1].toFixed(3)}]` : '';
+        return `${segment.label ?? `${segment.kind} ${segment.index}`}${gapText}`;
+      }
+      return `${segment.kind} ${segment.index}`;
+    });
   const parts = [
     `${describeTarget(freeState.target)}: ${validation.coverageOk ? 'cover PASS' : 'cover FAIL'}`,
     validation.constraintsOk ? 'constraints PASS' : 'constraints FAIL',
@@ -1291,11 +1513,161 @@ function summarizeFreeValidation(validation: FreeValidationResult): string {
   return parts.join('; ');
 }
 
+function samplePointToSvg(point: { a: number; b: number }, size: { width: number; height: number; pad: number }): { x: number; y: number } {
+  const innerWidth = size.width - 2 * size.pad;
+  const innerHeight = size.height - 2 * size.pad;
+  return {
+    x: size.pad + point.a * innerWidth,
+    y: size.height - size.pad - point.b * innerHeight,
+  };
+}
+
+function colorForSampleCase(caseId: string): string {
+  const colors: Record<string, string> = {
+    'vd0-o1-empty': '#2563eb',
+    'vd0-o2-m0': '#0891b2',
+    'vd1-empty': '#16a34a',
+    'vd1-m0': '#65a30d',
+    'vd1-m1': '#ca8a04',
+    'vd1-m5': '#ea580c',
+    'vd1-m0-m1': '#dc2626',
+    'vd1-m0-m5': '#db2777',
+    'vd2-m0': '#9333ea',
+    'vd2-m0-m1': '#7c3aed',
+    'vd2-m0-m5': '#4f46e5',
+    'vd2-m0-m1-m5': '#0d9488',
+    't3-m1': '#475569',
+    't3-m5': '#111827',
+  };
+  return colors[caseId] ?? '#0f766e';
+}
+
+function renderVSamplePlot(summaries: VCaseSummary[]): string {
+  const size = { width: 500, height: 220, pad: 28 };
+  const axis = `
+    <line x1="${size.pad}" y1="${size.height - size.pad}" x2="${size.width - size.pad}" y2="${size.height - size.pad}" />
+    <line x1="${size.pad}" y1="${size.pad}" x2="${size.pad}" y2="${size.height - size.pad}" />
+    <text x="${size.width - size.pad}" y="${size.height - 8}" text-anchor="end">a</text>
+    <text x="10" y="${size.pad}" text-anchor="start">b</text>
+  `;
+  const samples = summaries.flatMap((summary) => summary.samples).slice(-500).map((point) => {
+    const svgPoint = samplePointToSvg(point, size);
+    return `<circle cx="${svgPoint.x}" cy="${svgPoint.y}" r="1.6" style="fill:${colorForSampleCase(point.caseId)}" />`;
+  }).join('');
+  const pareto = summaries.map((summary) => {
+    const linePoints = summary.pareto.map((point) => {
+      const svgPoint = samplePointToSvg(point, size);
+      return `${svgPoint.x.toFixed(2)},${svgPoint.y.toFixed(2)}`;
+    }).join(' ');
+    return linePoints ? `<polyline points="${linePoints}" style="stroke:${colorForSampleCase(summary.caseId)}" />` : '';
+  }).join('');
+  const current = currentV0Sample && 'kind' in currentV0Sample && currentV0Sample.kind === 'v'
+    ? (() => {
+        const point = samplePointToSvg(currentV0Sample, size);
+        return `<circle class="half-frontier-selected" cx="${point.x}" cy="${point.y}" r="4" style="fill:${colorForSampleCase(currentV0Sample.caseId)}" />`;
+      })()
+    : '';
+  return `<svg class="half-frontier-plot" viewBox="0 0 ${size.width} ${size.height}" role="img" aria-label="V0 sampling plot">${axis}${samples}${pareto}${current}</svg>`;
+}
+
+function endpointPointToSvg(point: { start: number; end: number }, size: { width: number; height: number; pad: number }): { x: number; y: number } {
+  return samplePointToSvg({ a: point.start, b: point.end }, size);
+}
+
+function ce2Hue(index: number, count: number): string {
+  const t = count <= 1 ? 0 : index / (count - 1);
+  return `hsl(${Math.round(220 - 220 * t)}, 78%, 46%)`;
+}
+
+function endpointAxis(size: { width: number; height: number; pad: number }, xLabel: string, yLabel: string): string {
+  return `
+    <line x1="${size.pad}" y1="${size.height - size.pad}" x2="${size.width - size.pad}" y2="${size.height - size.pad}" />
+    <line x1="${size.pad}" y1="${size.pad}" x2="${size.pad}" y2="${size.height - size.pad}" />
+    <text x="${size.width - size.pad}" y="${size.height - 8}" text-anchor="end">${xLabel}</text>
+    <text x="10" y="${size.pad}" text-anchor="start">${yLabel}</text>
+  `;
+}
+
+function renderCe1EndpointPlot(summary: CCaseSummary | undefined): string {
+  const size = { width: 500, height: 180, pad: 30 };
+  const points = summary?.samples.map((sample) => {
+    const point = endpointPointToSvg(sample.edge01, size);
+    const maximal = summary.maximal.includes(sample);
+    return `<circle class="${maximal ? 'half-frontier-endpoint is-maximal' : 'half-frontier-endpoint'}" cx="${point.x}" cy="${point.y}" r="${maximal ? 4 : 2.2}" />`;
+  }).join('') ?? '';
+  return `<svg class="half-frontier-plot" viewBox="0 0 ${size.width} ${size.height}" role="img" aria-label="CE1 endpoint plot">${endpointAxis(size, 'start e01', 'end e01')}${points}</svg>`;
+}
+
+function renderCe2EndpointPlot(summary: CCaseSummary | undefined, edge: 'edge50' | 'edge01', label: string): string {
+  const size = { width: 500, height: 180, pad: 30 };
+  const samples = summary?.samples ?? [];
+  const ordered = samples
+    .map((sample, index) => ({ sample, index }))
+    .sort((a, b) => (a.sample.edge50?.start ?? 0) - (b.sample.edge50?.start ?? 0));
+  const points = ordered.map(({ sample }, index) => {
+    const interval = edge === 'edge50' ? sample.edge50 : sample.edge01;
+    if (!interval) return '';
+    const point = endpointPointToSvg(interval, size);
+    const maximal = summary?.maximal.includes(sample) ?? false;
+    const color = ce2Hue(index, Math.max(1, ordered.length));
+    return `<circle class="${maximal ? 'half-frontier-endpoint is-maximal' : 'half-frontier-endpoint'}" cx="${point.x}" cy="${point.y}" r="${maximal ? 4 : 2.2}" style="fill:${color};stroke:${color}" />`;
+  }).join('');
+  return `<svg class="half-frontier-plot" viewBox="0 0 ${size.width} ${size.height}" role="img" aria-label="${label} endpoint plot">${endpointAxis(size, `start ${label}`, `end ${label}`)}${points}</svg>`;
+}
+
+function renderCSamplePlot(summaries: CCaseSummary[]): string {
+  const ce1 = summaries.find((summary) => summary.caseId === 'ce1-m0');
+  const ce2 = summaries.find((summary) => summary.caseId === 'ce2-m0');
+  return `
+    <div class="half-frontier-subtitle">CE1 e01 endpoints</div>
+    ${renderCe1EndpointPlot(ce1)}
+    <div class="half-frontier-subtitle">CE2 e50 endpoints</div>
+    ${renderCe2EndpointPlot(ce2, 'edge50', 'e50')}
+    <div class="half-frontier-subtitle">CE2 e01 endpoints matched by color</div>
+    ${renderCe2EndpointPlot(ce2, 'edge01', 'e01')}
+  `;
+}
+
+function currentSampleText(sample: VSample | CSample | RejectedSample | null): string {
+  if (!sample) return 'none';
+  if ('reason' in sample) return `rejected: ${sample.reason}`;
+  if (sample.kind === 'v') return `${sample.label}; a=${sample.a.toFixed(4)}, b=${sample.b.toFixed(4)}`;
+  const e50 = sample.edge50 ? `; e50=[${sample.edge50.start.toFixed(3)}, ${sample.edge50.end.toFixed(3)}]` : '';
+  return `${sample.label}; e01=[${sample.edge01.start.toFixed(3)}, ${sample.edge01.end.toFixed(3)}]${e50}`;
+}
+
+function renderSamplingPanel(): string {
+  const store = samplingStore();
+  const vSummaries = summarizeVSamples(store.v);
+  const cSummaries = summarizeCSamples(store.c);
+  const groupText = [
+    ...vSummaries.map((summary) => `${summary.label}: ${summary.samples.length} (${summary.pareto.length} Pareto)`),
+    ...cSummaries.map((summary) => `${summary.label}: ${summary.samples.length} (${summary.maximal.length} maximal)`),
+  ].join('; ');
+  const graphs = freeState.tool === 'sample'
+    ? `${renderVSamplePlot(vSummaries)}${renderCSamplePlot(cSummaries)}`
+    : '';
+
+  return `
+    <div class="half-frontier-panel">
+      <div class="half-frontier-title">sampling</div>
+      <div class="half-frontier-controls">
+        <button type="button" class="free-button" data-clear-samples>clear samples</button>
+      </div>
+      <div class="free-small-status">current V0: ${escapeHtml(currentSampleText(currentV0Sample))}</div>
+      <div class="free-small-status">current C: ${escapeHtml(currentSampleText(currentCSample))}</div>
+      ${graphs}
+      <div class="free-small-status">${escapeHtml(groupText || 'No samples yet. Select the sample tool and move C or V0.')}</div>
+      <div class="free-small-status">rejected=${store.rejected.length}</div>
+    </div>
+  `;
+}
+
 function renderFreePanel(validation: FreeValidationResult): void {
-  const targetButtons = (['S_HALF', 'S'] as FreeTarget[]).map((target) =>
+  const targetButtons = (['S_HALF', 'S', 'LOTUS'] as FreeTarget[]).map((target) =>
     `<button type="button" class="free-button${freeState.target === target ? ' is-active' : ''}" data-free-target="${target}">${describeTarget(target)}</button>`,
   ).join('');
-  const toolButtons = (['move', 'd-mark', 's-mark'] as FreeTool[]).map((tool) =>
+  const toolButtons = (['move', 'd-mark', 's-mark', 'sample'] as FreeTool[]).map((tool) =>
     `<button type="button" class="free-button${freeState.tool === tool ? ' is-active' : ''}" data-free-tool="${tool}">${tool}</button>`,
   ).join('');
   const statuses = new Map(validation.constraintStatuses.map((status) => [status.triangleId, status]));
@@ -1314,7 +1686,7 @@ function renderFreePanel(validation: FreeValidationResult): void {
         </select>
       </label>
     `).join('');
-    const vd0Controls = triangle.id === 'C' ? '' : `
+    const vd0Controls = triangle.id === 'C' || freeState.target === 'LOTUS' ? '' : `
       <label><input type="checkbox" data-vd0-enabled="${triangle.id}"${triangle.vd0.enabled ? ' checked' : ''}/>Vd0</label>
       <label>Vd0 mode
         <select data-vd0-mode="${triangle.id}"${triangle.vd0.enabled ? '' : ' disabled'}>
@@ -1347,7 +1719,7 @@ function renderFreePanel(validation: FreeValidationResult): void {
       <div class="free-triangle-row${triangle.id === freeState.selectedTriangleId ? ' is-selected' : ''}${status?.ok === false ? ' is-bad' : ''}">
         <button type="button" class="free-button free-name" data-select-triangle="${triangle.id}">${triangle.id}</button>
         <label><input type="checkbox" data-fixed="${triangle.id}"${triangle.fixed ? ' checked' : ''}/>fixed</label>
-        <label><input type="checkbox" data-hidden="${triangle.id}"${triangle.hidden ? ' checked' : ''}/>hidden</label>
+        <label><input type="checkbox" data-hidden="${triangle.id}"${triangle.hidden ? ' checked' : ''}${freeState.tool === 'sample' && triangle.id !== 'C' && triangle.id !== 'V0' ? ' disabled' : ''}/>hidden</label>
         ${midpoints}
         ${vd0Controls}
         ${edgeControls}
@@ -1364,6 +1736,7 @@ function renderFreePanel(validation: FreeValidationResult): void {
   freeControls.innerHTML = `
     <div class="free-toolbar">target ${targetButtons}</div>
     <div class="free-toolbar">tool ${toolButtons}</div>
+    ${renderSamplingPanel()}
     <div class="free-row"><span>${freeState.status}</span></div>
     ${triangleRows}
     <div class="free-row"><strong>labels</strong></div>
@@ -1465,6 +1838,7 @@ function render(): void {
   if (shapeMode === 'free') {
     initializeFreeFromCurrentIfNeeded();
     syncFreeStrictEps();
+    captureCurrentSample();
     refreshLabels(freeState);
     currentFreeValidation = validateFreeState(freeState);
 
@@ -1690,12 +2064,16 @@ freeControls.addEventListener('click', (event) => {
   }
   const toolButton = target.closest<HTMLButtonElement>('[data-free-tool]');
   if (toolButton) {
-    freeState.tool = toolButton.dataset.freeTool as FreeTool;
-    freeState.status = freeState.tool === 'd-mark'
-      ? 'D-mark mode: click two intersecting segments.'
-      : freeState.tool === 's-mark'
-        ? 'S-mark mode: click two intersecting segments.'
-      : 'Move mode: drag selected triangles.';
+    setFreeTool(toolButton.dataset.freeTool as FreeTool);
+    render();
+    return;
+  }
+  const clearSamplesButton = target.closest<HTMLButtonElement>('[data-clear-samples]');
+  if (clearSamplesButton) {
+    freeState.sampling = { v: [], c: [], rejected: [] };
+    currentV0Sample = null;
+    currentCSample = null;
+    freeState.status = 'Cleared sampling data.';
     render();
     return;
   }
@@ -1926,7 +2304,9 @@ setupInteraction(
 );
 
 freeInteractionApi = setupFreeInteraction(canvas, () => freeState, render, () => {
-  autoPlaceAllFreeVd0FromControls();
+  if (freeState.tool !== 'sample') {
+    autoPlaceAllFreeVd0FromControls();
+  }
   render();
 });
 window.addEventListener('resize', () => {

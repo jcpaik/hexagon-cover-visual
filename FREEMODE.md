@@ -31,7 +31,7 @@ M_i=\frac12 V_i.
 
 ## Targets
 
-Free mode has two covering targets.
+Free mode has three covering targets.
 
 The full skeleton is
 
@@ -47,6 +47,48 @@ S_{1/2}=\partial H\cup\{O,M_0,\dots,M_5\}.
 
 Thus \(S_{1/2}\) still includes the whole boundary \(\partial H\), but replaces
 the six half-diagonal segments with seven marked points.
+
+The lotus target is a one-dimensional curve target.  Let
+
+\[
+D_i=\{p:\|p-V_i\|\le 1\}
+\]
+
+be the closed unit disk centered at \(V_i\).  Lotus is motivated by the
+parity/XOR pattern
+
+\[
+(D_0\oplus D_1\oplus\cdots\oplus D_5)\cap H,
+\]
+
+but Free mode uses the following explicit curve target rather than a filled
+two-dimensional region.
+
+For each \(i\), define two unit-circle arcs from \(O\) to \(V_i\):
+
+\[
+A_i^-\subset \partial D_{i-1},
+\qquad
+A_i^+\subset \partial D_{i+1},
+\]
+
+with indices modulo \(6\).  The lotus leaf at \(V_i\) is
+
+\[
+L_i=A_i^-\cup A_i^+.
+\]
+
+The full lotus target is
+
+\[
+\operatorname{Lotus}
+=
+\partial H\cup\bigcup_{i=0}^5 L_i.
+\]
+
+Thus Lotus consists of twelve unit-circle arcs plus the six hexagon perimeter
+edges.  The perimeter is part of Lotus, but it is recorded separately from the
+leaves \(L_i\).
 
 ## Base Constraints
 
@@ -114,20 +156,26 @@ Named points include:
 - manual coordinate points in saved state.
 
 Labeled points are created with either `d-mark` or `s-mark` by selecting two
-finite line segments.  The allowed source segments are:
+source curves.  The usual allowed source segments are:
 
 - hexagon boundary edges,
 - half-diagonals \([O,V_i]\),
 - visible triangle edges.
 
-If the two selected segments intersect, `d-mark` creates a dynamic label
+When the Free target is Lotus, the twelve lotus arcs are also selectable source
+curves.  The current implementation supports labels from one lotus arc and one
+visible triangle edge.  It does not create arc-arc labels or labels between a
+lotus arc and a fixed hexagon/half-diagonal segment.
+
+If the two selected sources intersect, `d-mark` creates a dynamic label
 (`D1`, `D2`, ...) that stores both source segments and recomputes its coordinate
 whenever the triangles move.  `s-mark` creates a static label (`S1`, `S2`, ...)
-whose coordinate is fixed at creation time.  Static labels keep the same
-`first` and `second` fields as dynamic labels, but only fixed source segments
-(hexagon edges and half-diagonals) are recorded; triangle-edge sources are
-stored as `null`.  If the selected segments do not intersect, no label is
-created.
+whose coordinate is usually fixed at creation time.  Static labels keep the
+same `first` and `second` fields as dynamic labels only for fixed source
+segments (hexagon edges and half-diagonals).  Static labels involving a lotus
+arc keep the arc and triangle-edge references so the intersection can be
+recomputed as triangles move.  If the selected sources do not intersect, no
+label is created.
 
 While a label is being created in either mark mode, selected source segments
 are highlighted in the figure.  This highlight is temporary bookkeeping only;
@@ -148,6 +196,11 @@ measured as distance from \(V_i\) along the branch:
 
 If a selected raw source later becomes invalid or leaves the branch, Vd0 falls
 back to the automatic farthest-uncovered value for that coordinate.
+
+Vd0 is not available for the Lotus target.  When Lotus is selected, Vd0
+controls are hidden and Vd0 auto-placement is ignored.  Existing Vd0 settings
+are preserved and become visible again when the target is switched back to
+\(S\) or \(S_{1/2}\).
 
 ## Interface Conventions
 
@@ -186,6 +239,10 @@ that remains after applying the same epsilon margin.  The app computes interval
 coverage on each skeleton segment, merges those intervals over all seven
 triangles, and reports the remaining gaps.
 
+For Lotus, the same strict epsilon margin is applied to each lotus perimeter
+edge and each circular arc.  Arc coverage is computed as exact parameter
+intervals on the arc, then merged over all seven placed triangles.
+
 This means a point lying exactly on a triangle edge is not treated as covered
 for the strict validity test, even though it is visually on the boundary.
 
@@ -201,6 +258,17 @@ For target \(S_{1/2}\), a free-mode configuration is valid when:
 1. all active constraints are satisfied with the strict epsilon margin,
 2. every boundary edge has no uncovered interval, and
 3. \(O,M_0,\dots,M_5\) are each covered by at least one triangle.
+
+For target Lotus, a free-mode configuration is valid when:
+
+1. all active non-Vd0 constraints are satisfied with the strict epsilon margin,
+2. every lotus arc has no uncovered interval, and
+3. every lotus perimeter edge has no uncovered interval.
+
+Lotus coverage is checked geometrically against all seven placed triangles,
+including \(T_C\).  The app does not currently enforce the separate observation
+that a unit equilateral triangle can intersect positive-length portions of at
+most four lotus arcs; that fact is recorded in `MATH.md`.
 
 Fixed triangles remain part of the covering test.  Hidden triangles also remain
 part of the covering test; hiding only removes them from the canvas hit target

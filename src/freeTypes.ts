@@ -1,12 +1,12 @@
 import type { Point } from './types';
 
 export type FreeTriangleId = 'C' | 'V0' | 'V1' | 'V2' | 'V3' | 'V4' | 'V5';
-export type FreeTarget = 'S_HALF' | 'S';
-export type FreeTool = 'move' | 'd-mark' | 's-mark';
+export type FreeTarget = 'S_HALF' | 'S' | 'LOTUS';
+export type FreeTool = 'move' | 'd-mark' | 's-mark' | 'sample';
 export type FreeVd0Mode = 'max-c' | 'max-a' | 'max-b';
 export type FreeVd0Coordinate = 'a' | 'b' | 'c';
 export type NamedPointKind = 'O' | 'M' | 'V' | 'label' | 'manual';
-export type FreeSegmentKind = 'hex-edge' | 'half-diagonal' | 'triangle-edge';
+export type FreeSegmentKind = 'hex-edge' | 'half-diagonal' | 'triangle-edge' | 'lotus-arc';
 
 export interface FreeNamedPointRef {
   kind: NamedPointKind;
@@ -61,6 +61,7 @@ export interface FreeState {
   labels: FreeLabel[];
   selectedSegments: FreeSegmentRef[];
   status: string;
+  sampling?: import('./halfSkeletonFrontier').SamplingStore;
 }
 
 export interface FreeSegment {
@@ -68,11 +69,25 @@ export interface FreeSegment {
   start: Point;
   end: Point;
   label: string;
+  arc?: {
+    center: Point;
+    radius: number;
+    startAngle: number;
+    sweep: number;
+  };
 }
 
 export interface FreeValidationSegment {
-  kind: 'edge' | 'diag';
+  kind: 'edge' | 'diag' | 'lotus-line' | 'lotus-arc';
   index: number;
+  leafIndex?: number;
+  label?: string;
+  arc?: {
+    center: Point;
+    radius: number;
+    startAngle: number;
+    sweep: number;
+  };
   gaps: Array<[number, number]>;
   intervals: Array<[number, number]>;
 }

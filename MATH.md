@@ -281,3 +281,47 @@ To finish the contradiction argument, one still needs a rigorous statement of th
 3. the resulting composition map cannot satisfy the required cyclic inequality.
 
 The admissible-set description is the local input. The composition inequality is the global output. The non-coverability statement follows once those two pieces are connected without exception.
+
+## 12. The lotus target
+
+There is a second 1-dimensional target set used by the app, called **lotus**.
+Let
+\[
+D_i := \{p : \|p-V_i\|\le 1\}
+\]
+be the closed unit disk centered at the hexagon vertex `V_i`. The informal construction starts from the parity/XOR pattern
+\[
+(D_0\oplus D_1\oplus\cdots\oplus D_5)\cap H.
+\]
+The app's lotus target is not this filled 2-dimensional parity region. The target is the following explicit 1-dimensional curve set.
+
+For each `i`, define two unit-circle arcs from `O` to `V_i`:
+\[
+A_i^- \subset \partial D_{i-1},
+\qquad
+A_i^+ \subset \partial D_{i+1},
+\]
+where indices are taken mod `6`. Thus `A_i^-` is centered at `V_{i-1}` and `A_i^+` is centered at `V_{i+1}`. Define
+\[
+L_i := A_i^- \cup A_i^+.
+\]
+
+The lotus target is
+\[
+\operatorname{Lotus}
+:=
+\partial H \cup \bigcup_{i=0}^5 L_i.
+\]
+Equivalently, it is the twelve arcs `A_i^\pm` together with the six perimeter edges
+\[
+\partial H = \bigcup_i [V_i,V_{i+1}]
+\]
+The perimeter is part of lotus, but it is recorded separately from the leaves `L_i`.
+
+The useful geometric observation is that a unit equilateral triangle can intersect positive-length portions of at most four of the twelve lotus arcs. The app's Free-mode `Lotus` target currently checks coverage geometrically: each arc and perimeter edge is tested against the seven placed triangles by exact interval coverage.
+
+The question represented by this mode is:
+
+> Can the lotus target be covered by seven unit equilateral triangles?
+
+This note records the definition and locality model only; it does not assert the answer to the seven-triangle lotus question.
