@@ -90,12 +90,24 @@ export function setupFreeInteraction(
     const limit = scaleToMath(EDGE_HIT_PX);
     let best: { ref: FreeSegmentRef; distance: number } | null = null;
     for (const segment of skeletonSegments(state)) {
-      const d = distanceToSegment(point, segment.start, segment.end);
+      const d = segment.arc ? distanceToArc(point, segment.arc) : distanceToSegment(point, segment.start, segment.end);
       if (d <= limit && (!best || d < best.distance)) {
         best = { ref: segment.ref, distance: d };
       }
     }
     return best?.ref ?? null;
+  }
+
+  function distanceToArc(point: Point, arc: NonNullable<ReturnType<typeof skeletonSegments>[number]['arc']>): number {
+    const rawAngle = Math.atan2(point.y - arc.center.y, point.x - arc.center.x);
+    const relative = Math.atan2(Math.sin(rawAngle - arc.startAngle), Math.cos(rawAngle - arc.startAngle));
+    const t = relative / arc.sweep;
+    if (t >= 0 && t <= 1) {
+      return Math.abs(Math.hypot(point.x - arc.center.x, point.y - arc.center.y) - arc.radius);
+    }
+    const start = { x: arc.center.x + arc.radius * Math.cos(arc.startAngle), y: arc.center.y + arc.radius * Math.sin(arc.startAngle) };
+    const end = { x: arc.center.x + arc.radius * Math.cos(arc.startAngle + arc.sweep), y: arc.center.y + arc.radius * Math.sin(arc.startAngle + arc.sweep) };
+    return Math.min(Math.hypot(point.x - start.x, point.y - start.y), Math.hypot(point.x - end.x, point.y - end.y));
   }
 
   function updateCursor(point: Point): void {

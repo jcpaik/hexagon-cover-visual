@@ -25,6 +25,7 @@ const VD0_SAMPLES = 512;
 const VD0_SEARCH_STEPS = 48;
 const EPS = 1e-9;
 const VD0_FIT_SIDE_TOLERANCE = 1e-8;
+const LOTUS_RADIUS = 1;
 
 const FREE_COLORS: Record<FreeTriangleId, string> = {
   C: '#0ea5e9',
@@ -80,6 +81,10 @@ export function createDefaultFreeState(): FreeState {
 
 function isFixedSegmentRef(ref: FreeSegmentRef): boolean {
   return ref.kind === 'hex-edge' || ref.kind === 'half-diagonal';
+}
+
+function shouldKeepStaticSegmentRef(ref: FreeSegmentRef): boolean {
+  return isFixedSegmentRef(ref) || ref.kind === 'lotus-arc';
 }
 
 export function colorForTriangle(id: FreeTriangleId): string {
@@ -291,6 +296,88 @@ function strictIntervalOnSegment(start: Point, end: Point, triangle: FreeTriangl
     return null;
   }
   return [Math.max(0, tMin), Math.min(1, tMax)];
+}
+
+function normalizeIncreasingRange(startAngle: number, sweep: number): { min: number; max: number } {
+  return sweep >= 0
+    ? { min: startAngle, max: startAngle + sweep }
+    : { min: startAngle + sweep, max: startAngle };
+}
+
+function intersectIntervalLists(a: Array<[number, number]>, b: Array<[number, number]>): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (const first of a) {
+    for (const second of b) {
+      const start = Math.max(first[0], second[0]);
+      const end = Math.min(first[1], second[1]);
+      if (end >= start + EPS) {
+        out.push([start, end]);
+      }
+    }
+  }
+  return mergeIntervals(out);
+}
+
+function angleInequalityIntervals(
+  cosCoeff: number,
+  sinCoeff: number,
+  constant: number,
+  minAngle: number,
+  maxAngle: number,
+): Array<[number, number]> {
+  const amplitude = Math.hypot(cosCoeff, sinCoeff);
+  if (amplitude < EPS) {
+    return constant >= -EPS ? [[minAngle, maxAngle]] : [];
+  }
+
+  const threshold = -constant / amplitude;
+  if (threshold <= -1 + EPS) return [[minAngle, maxAngle]];
+  if (threshold > 1 - EPS) return [];
+
+  const center = Math.atan2(sinCoeff, cosCoeff);
+  const radius = Math.acos(Math.max(-1, Math.min(1, threshold)));
+  const intervals: Array<[number, number]> = [];
+  const firstK = Math.floor((minAngle - center - radius) / (2 * Math.PI)) - 1;
+  const lastK = Math.ceil((maxAngle - center + radius) / (2 * Math.PI)) + 1;
+  for (let k = firstK; k <= lastK; k++) {
+    const offset = center + k * 2 * Math.PI;
+    const start = Math.max(minAngle, offset - radius);
+    const end = Math.min(maxAngle, offset + radius);
+    if (end >= start + EPS) {
+      intervals.push([start, end]);
+    }
+  }
+  return mergeIntervals(intervals);
+}
+
+function strictIntervalOnArc(
+  arc: NonNullable<FreeSegment['arc']>,
+  triangle: FreeTriangleState,
+  strictEps: number,
+): [number, number][] {
+  const vertices = triangleVertices(triangle.center, triangle.angle);
+  const angleRange = normalizeIncreasingRange(arc.startAngle, arc.sweep);
+  let allowed: Array<[number, number]> = [[angleRange.min, angleRange.max]];
+
+  for (let i = 0; i < 3; i++) {
+    const a = vertices[i];
+    const b = vertices[(i + 1) % 3];
+    const edge = { x: b.x - a.x, y: b.y - a.y };
+    const base = edge.x * (arc.center.y - a.y) - edge.y * (arc.center.x - a.x) - Math.max(0, strictEps);
+    const cosCoeff = -arc.radius * edge.y;
+    const sinCoeff = arc.radius * edge.x;
+    allowed = intersectIntervalLists(
+      allowed,
+      angleInequalityIntervals(cosCoeff, sinCoeff, base, angleRange.min, angleRange.max),
+    );
+    if (allowed.length === 0) return [];
+  }
+
+  return allowed.map(([thetaStart, thetaEnd]) => {
+    const t0 = (thetaStart - arc.startAngle) / arc.sweep;
+    const t1 = (thetaEnd - arc.startAngle) / arc.sweep;
+    return [clamp01(Math.min(t0, t1)), clamp01(Math.max(t0, t1))] as [number, number];
+  });
 }
 
 function mergeIntervals(intervals: Array<[number, number] | null>): Array<[number, number]> {
@@ -664,12 +751,31 @@ export function validateFreeState(state: FreeState): FreeValidationResult {
     segments.push({ kind, index, intervals, gaps: gapsFromIntervals(intervals) });
   };
 
-  for (let i = 0; i < 6; i++) {
-    checkSegment('edge', i, HEXAGON_VERTICES[i], HEXAGON_VERTICES[(i + 1) % 6]);
+  if (state.target !== 'LOTUS') {
+    for (let i = 0; i < 6; i++) {
+      checkSegment('edge', i, HEXAGON_VERTICES[i], HEXAGON_VERTICES[(i + 1) % 6]);
+    }
   }
   if (state.target === 'S') {
     for (let i = 0; i < 6; i++) {
       checkSegment('diag', i, { x: 0, y: 0 }, HEXAGON_VERTICES[i]);
+    }
+  }
+  if (state.target === 'LOTUS') {
+    for (const component of lotusComponents()) {
+      const intervals = mergeIntervals(
+        component.arc
+          ? visibleOrHiddenTriangles.flatMap((triangle) => strictIntervalOnArc(component.arc!, triangle, state.strictEps))
+          : visibleOrHiddenTriangles.map((triangle) => strictIntervalOnSegment(component.start, component.end, triangle, state.strictEps)),
+      );
+      segments.push({
+        kind: component.arc ? 'lotus-arc' : 'lotus-line',
+        index: component.ref.index,
+        label: component.label,
+        arc: component.arc,
+        intervals,
+        gaps: gapsFromIntervals(intervals),
+      });
     }
   }
 
@@ -704,7 +810,7 @@ export function validateFreeState(state: FreeState): FreeValidationResult {
         }
       }
     }
-    const vd0Status = getFreeVd0Status(state, triangle);
+    const vd0Status = state.target === 'LOTUS' ? null : getFreeVd0Status(state, triangle);
     if (vd0Status?.message) {
       messages.push(vd0Status.message);
     }
@@ -748,7 +854,62 @@ export function skeletonSegments(state: FreeState): FreeSegment[] {
       });
     }
   }
+  if (state.target === 'LOTUS') {
+    segments.push(...lotusComponents().filter((component) => component.arc));
+  }
   return segments;
+}
+
+export function lotusComponents(): FreeSegment[] {
+  const components: FreeSegment[] = [];
+  for (let i = 0; i < 6; i++) {
+    const current = HEXAGON_VERTICES[i];
+    const next = HEXAGON_VERTICES[(i + 1) % 6];
+    components.push({
+      ref: { kind: 'hex-edge', index: i },
+      start: current,
+      end: next,
+      label: `perimeter e${i}`,
+    });
+  }
+  for (let i = 0; i < 6; i++) {
+    const current = HEXAGON_VERTICES[i];
+    const previous = HEXAGON_VERTICES[(i + 5) % 6];
+    const next = HEXAGON_VERTICES[(i + 1) % 6];
+    const leftStartAngle = Math.atan2(-previous.y, -previous.x);
+    const leftEndAngle = Math.atan2(current.y - previous.y, current.x - previous.x);
+    const rightStartAngle = Math.atan2(-next.y, -next.x);
+    const rightEndAngle = Math.atan2(current.y - next.y, current.x - next.x);
+    components.push({
+      ref: { kind: 'lotus-arc', index: i * 2 },
+      start: { x: 0, y: 0 },
+      end: current,
+      label: `L${i}:left`,
+      arc: {
+        center: previous,
+        radius: LOTUS_RADIUS,
+        startAngle: leftStartAngle,
+        sweep: signedAngleDelta(leftStartAngle, leftEndAngle),
+      },
+    });
+    components.push({
+      ref: { kind: 'lotus-arc', index: i * 2 + 1 },
+      start: { x: 0, y: 0 },
+      end: current,
+      label: `L${i}:right`,
+      arc: {
+        center: next,
+        radius: LOTUS_RADIUS,
+        startAngle: rightStartAngle,
+        sweep: signedAngleDelta(rightStartAngle, rightEndAngle),
+      },
+    });
+  }
+  return components;
+}
+
+function signedAngleDelta(startAngle: number, endAngle: number): number {
+  return Math.atan2(Math.sin(endAngle - startAngle), Math.cos(endAngle - startAngle));
 }
 
 export function sameSegmentRef(a: FreeSegmentRef, b: FreeSegmentRef): boolean {
@@ -759,7 +920,47 @@ export function getSegmentByRef(state: FreeState, ref: FreeSegmentRef): FreeSegm
   return skeletonSegments(state).find((segment) => sameSegmentRef(segment.ref, ref)) ?? null;
 }
 
+function pointOnArc(arc: NonNullable<FreeSegment['arc']>, t: number): Point {
+  const angle = arc.startAngle + arc.sweep * t;
+  return {
+    x: arc.center.x + arc.radius * Math.cos(angle),
+    y: arc.center.y + arc.radius * Math.sin(angle),
+  };
+}
+
+function arcLineIntersection(arcSegment: FreeSegment, lineSegment: FreeSegment): Point | null {
+  if (!arcSegment.arc) return null;
+  const d = { x: lineSegment.end.x - lineSegment.start.x, y: lineSegment.end.y - lineSegment.start.y };
+  const f = { x: lineSegment.start.x - arcSegment.arc.center.x, y: lineSegment.start.y - arcSegment.arc.center.y };
+  const a = d.x * d.x + d.y * d.y;
+  const b = 2 * (f.x * d.x + f.y * d.y);
+  const c = f.x * f.x + f.y * f.y - arcSegment.arc.radius * arcSegment.arc.radius;
+  const disc = b * b - 4 * a * c;
+  if (a < EPS || disc < -EPS) return null;
+  const sqrtDisc = Math.sqrt(Math.max(0, disc));
+  for (const tLine of [(-b - sqrtDisc) / (2 * a), (-b + sqrtDisc) / (2 * a)]) {
+    if (tLine < -EPS || tLine > 1 + EPS) continue;
+    const point = {
+      x: lineSegment.start.x + clamp01(tLine) * d.x,
+      y: lineSegment.start.y + clamp01(tLine) * d.y,
+    };
+    const rawAngle = Math.atan2(point.y - arcSegment.arc.center.y, point.x - arcSegment.arc.center.x);
+    const relative = Math.atan2(
+      Math.sin(rawAngle - arcSegment.arc.startAngle),
+      Math.cos(rawAngle - arcSegment.arc.startAngle),
+    );
+    const tArc = relative / arcSegment.arc.sweep;
+    if (tArc >= -EPS && tArc <= 1 + EPS) {
+      return pointOnArc(arcSegment.arc, clamp01(tArc));
+    }
+  }
+  return null;
+}
+
 export function segmentIntersection(a: FreeSegment, b: FreeSegment): Point | null {
+  if (a.arc && !b.arc) return arcLineIntersection(a, b);
+  if (!a.arc && b.arc) return arcLineIntersection(b, a);
+  if (a.arc || b.arc) return null;
   const r = { x: a.end.x - a.start.x, y: a.end.y - a.start.y };
   const s = { x: b.end.x - b.start.x, y: b.end.y - b.start.y };
   const denom = r.x * s.y - r.y * s.x;
@@ -773,7 +974,10 @@ export function segmentIntersection(a: FreeSegment, b: FreeSegment): Point | nul
 
 export function refreshLabels(state: FreeState): void {
   for (const label of state.labels) {
-    if (label.mode === 'static') {
+    const recomputeStatic = label.mode === 'static' && (
+      label.first?.kind === 'lotus-arc' || label.second?.kind === 'lotus-arc'
+    );
+    if (label.mode === 'static' && !recomputeStatic) {
       continue;
     }
     if (!label.first || !label.second) {
@@ -802,6 +1006,10 @@ export function createLabel(
   second: FreeSegmentRef,
   mode: FreeLabel['mode'],
 ): FreeLabel | null {
+  const arcCount = (first.kind === 'lotus-arc' ? 1 : 0) + (second.kind === 'lotus-arc' ? 1 : 0);
+  if (arcCount > 0 && (arcCount !== 1 || (first.kind !== 'triangle-edge' && second.kind !== 'triangle-edge'))) {
+    return null;
+  }
   const firstSegment = getSegmentByRef(state, first);
   const secondSegment = getSegmentByRef(state, second);
   if (!firstSegment || !secondSegment) return null;
@@ -812,12 +1020,14 @@ export function createLabel(
     id,
     name: id,
     mode,
-    first: mode === 'dynamic' || isFixedSegmentRef(first) ? first : null,
-    second: mode === 'dynamic' || isFixedSegmentRef(second) ? second : null,
+    first: mode === 'dynamic' || arcCount > 0 || shouldKeepStaticSegmentRef(first) ? first : null,
+    second: mode === 'dynamic' || arcCount > 0 || shouldKeepStaticSegmentRef(second) ? second : null,
     point,
   };
 }
 
 export function describeTarget(target: FreeTarget): string {
-  return target === 'S' ? 'S' : 'S_{1/2}';
+  if (target === 'S') return 'S';
+  if (target === 'LOTUS') return 'Lotus';
+  return 'S_{1/2}';
 }

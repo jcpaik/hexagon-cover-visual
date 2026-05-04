@@ -1,6 +1,6 @@
 import './style.css';
 import type { Point, ShapeMode, TriangleState } from './types';
-import { config, mathToCanvas, setCanvasSize } from './coords';
+import { config, mathToCanvas, scaleToCanvas, setCanvasSize } from './coords';
 import { drawHexagon, HEXAGON_VERTICES } from './hexagon';
 import {
   computeChainValuesForLocalCs,
@@ -41,6 +41,7 @@ import {
   getFreeVd0Status,
   getFreeVd0RawSourceOptions,
   getTriangle,
+  lotusComponents,
   midpoint,
   namedPointLabel,
   projectTriangleToConstraints,
@@ -53,11 +54,13 @@ import { setupFreeInteraction } from './freeInteraction';
 import type {
   FreeNamedPointRef,
   FreeLabel,
+  FreeSegment,
   FreeSegmentRef,
   FreeState,
   FreeTarget,
   FreeTool,
   FreeTriangleId,
+  FreeValidationSegment,
   FreeVd0Coordinate,
   FreeVd0Mode,
   FreeValidationResult,
@@ -756,19 +759,29 @@ function drawCoverTriangleOverlay(ctx2d: CanvasRenderingContext2D, triangles: Co
   ctx2d.restore();
 }
 
-function drawCoverageGaps(ctx2d: CanvasRenderingContext2D, segments: CoverSegmentReport[]): void {
+function drawCoverageGaps(ctx2d: CanvasRenderingContext2D, segments: Array<CoverSegmentReport | FreeValidationSegment>): void {
   ctx2d.save();
   ctx2d.strokeStyle = '#dc2626';
   ctx2d.lineWidth = 5;
   ctx2d.lineCap = 'round';
 
   for (const segment of segments) {
+    if ('arc' in segment && segment.arc) {
+      for (const [gapStart, gapEnd] of segment.gaps) {
+        drawArcInterval(ctx2d, segment.arc, gapStart, gapEnd);
+      }
+      continue;
+    }
     const start = segment.kind === 'edge'
       ? HEXAGON_VERTICES[segment.index]
-      : { x: 0, y: 0 };
+      : segment.kind === 'diag'
+        ? { x: 0, y: 0 }
+        : lotusComponents().find((component) => component.label === ('label' in segment ? segment.label : undefined))?.start ?? { x: 0, y: 0 };
     const end = segment.kind === 'edge'
       ? HEXAGON_VERTICES[(segment.index + 1) % 6]
-      : HEXAGON_VERTICES[segment.index];
+      : segment.kind === 'diag'
+        ? HEXAGON_VERTICES[segment.index]
+        : lotusComponents().find((component) => component.label === ('label' in segment ? segment.label : undefined))?.end ?? { x: 0, y: 0 };
 
     for (const [gapStart, gapEnd] of segment.gaps) {
       const canvasStart = mathToCanvas(segmentPoint(start, end, gapStart));
@@ -780,6 +793,40 @@ function drawCoverageGaps(ctx2d: CanvasRenderingContext2D, segments: CoverSegmen
     }
   }
 
+  ctx2d.restore();
+}
+
+function drawArcInterval(
+  ctx2d: CanvasRenderingContext2D,
+  arc: NonNullable<FreeSegment['arc']>,
+  startT: number,
+  endT: number,
+): void {
+  const center = mathToCanvas(arc.center);
+  const startAngle = -(arc.startAngle + arc.sweep * startT);
+  const endAngle = -(arc.startAngle + arc.sweep * endT);
+  ctx2d.beginPath();
+  ctx2d.arc(center.x, center.y, scaleToCanvas(arc.radius), startAngle, endAngle, arc.sweep > 0);
+  ctx2d.stroke();
+}
+
+function drawLotusTarget(ctx2d: CanvasRenderingContext2D): void {
+  ctx2d.save();
+  ctx2d.strokeStyle = '#0f766e';
+  ctx2d.lineWidth = 3;
+  ctx2d.lineCap = 'round';
+  for (const component of lotusComponents()) {
+    if (component.arc) {
+      drawArcInterval(ctx2d, component.arc, 0, 1);
+    } else {
+      const start = mathToCanvas(component.start);
+      const end = mathToCanvas(component.end);
+      ctx2d.beginPath();
+      ctx2d.moveTo(start.x, start.y);
+      ctx2d.lineTo(end.x, end.y);
+      ctx2d.stroke();
+    }
+  }
   ctx2d.restore();
 }
 
@@ -981,6 +1028,9 @@ function initializeFreeFromCurrentIfNeeded(): void {
 
 function drawFreeMode(ctx2d: CanvasRenderingContext2D, validation: FreeValidationResult): void {
   ctx2d.save();
+  if (freeState.target === 'LOTUS') {
+    drawLotusTarget(ctx2d);
+  }
   for (const triangle of freeState.triangles) {
     if (triangle.hidden) {
       continue;
@@ -1151,14 +1201,14 @@ function clampInteger(value: string | undefined, min: number, max: number): numb
 }
 
 function formatFreeSnapshot(): string {
-  return JSON.stringify({ version: 1, ...freeState }, null, 2);
+  return JSON.stringify({ version: 2, ...freeState }, null, 2);
 }
 
 function isFreeSegmentRef(value: unknown): value is FreeSegmentRef {
   if (!value || typeof value !== 'object') return false;
   const ref = value as Partial<FreeSegmentRef>;
   if (typeof ref.index !== 'number' || !Number.isInteger(ref.index)) return false;
-  if (ref.kind === 'hex-edge' || ref.kind === 'half-diagonal') return true;
+  if (ref.kind === 'hex-edge' || ref.kind === 'half-diagonal' || ref.kind === 'lotus-arc') return true;
   return ref.kind === 'triangle-edge' && (
     ref.triangleId === 'C' ||
     ref.triangleId === 'V0' ||
@@ -1174,8 +1224,16 @@ function isFreeTool(value: unknown): value is FreeTool {
   return value === 'move' || value === 'd-mark' || value === 's-mark';
 }
 
+function isFreeTarget(value: unknown): value is FreeTarget {
+  return value === 'S_HALF' || value === 'S' || value === 'LOTUS';
+}
+
 function isFixedFreeSegmentRef(value: unknown): value is FreeSegmentRef {
   return isFreeSegmentRef(value) && (value.kind === 'hex-edge' || value.kind === 'half-diagonal');
+}
+
+function isStaticFreeLabelRef(value: unknown): boolean {
+  return isFixedFreeSegmentRef(value) || (isFreeSegmentRef(value) && value.kind === 'lotus-arc');
 }
 
 function isFreeLabel(value: unknown): value is FreeLabel {
@@ -1193,8 +1251,18 @@ function isFreeLabel(value: unknown): value is FreeLabel {
     return isFreeSegmentRef(label.first) && isFreeSegmentRef(label.second);
   }
   if (label.point === null) return false;
-  return (label.first === null || isFixedFreeSegmentRef(label.first)) &&
-    (label.second === null || isFixedFreeSegmentRef(label.second));
+  const first = label.first;
+  const second = label.second;
+  if (
+    isFreeSegmentRef(first) &&
+    isFreeSegmentRef(second) &&
+    ((first.kind === 'lotus-arc' && second.kind === 'triangle-edge') ||
+      (first.kind === 'triangle-edge' && second.kind === 'lotus-arc'))
+  ) {
+    return true;
+  }
+  return (first === null || first === undefined || isStaticFreeLabelRef(first)) &&
+    (second === null || second === undefined || isStaticFreeLabelRef(second));
 }
 
 function setFreeStateStatus(text: string, isError = false): void {
@@ -1204,8 +1272,11 @@ function setFreeStateStatus(text: string, isError = false): void {
 
 function loadFreeSnapshot(raw: string): void {
   const parsed = JSON.parse(raw) as Partial<FreeState> & { version?: number };
-  if (parsed.version !== 1 || !Array.isArray(parsed.triangles) || parsed.triangles.length !== 7) {
+  if ((parsed.version !== 1 && parsed.version !== 2) || !Array.isArray(parsed.triangles) || parsed.triangles.length !== 7) {
     throw new Error('Invalid free snapshot.');
+  }
+  if (parsed.target !== undefined && !isFreeTarget(parsed.target)) {
+    throw new Error('Invalid free snapshot target.');
   }
   if (parsed.tool !== undefined && !isFreeTool(parsed.tool)) {
     throw new Error('Invalid free snapshot tool.');
@@ -1221,6 +1292,7 @@ function loadFreeSnapshot(raw: string): void {
   freeState = {
     ...defaults,
     ...parsed,
+    target: parsed.version === 1 && parsed.target === 'LOTUS' ? defaults.target : parsed.target ?? defaults.target,
     triangles: parsed.triangles.map((triangle, index) => ({
       ...defaults.triangles[index],
       ...triangle,
@@ -1256,6 +1328,9 @@ function syncFreeStrictEps(projectConstraints = false): void {
 
 function autoPlaceAllFreeVd0FromControls(): void {
   syncFreeStrictEps();
+  if (freeState.target === 'LOTUS') {
+    return;
+  }
   if (!freeState.triangles.some((triangle) => triangle.id !== 'C' && triangle.vd0.enabled)) {
     return;
   }
@@ -1277,7 +1352,14 @@ function autoPlaceAllFreeVd0FromControls(): void {
 function summarizeFreeValidation(validation: FreeValidationResult): string {
   const gapSegments = validation.segments
     .filter((segment) => segment.gaps.length > 0)
-    .map((segment) => `${segment.kind} ${segment.index}`);
+    .map((segment) => {
+      if (freeState.target === 'LOTUS') {
+        const firstGap = segment.gaps[0];
+        const gapText = firstGap ? ` [${firstGap[0].toFixed(3)}, ${firstGap[1].toFixed(3)}]` : '';
+        return `${segment.label ?? `${segment.kind} ${segment.index}`}${gapText}`;
+      }
+      return `${segment.kind} ${segment.index}`;
+    });
   const parts = [
     `${describeTarget(freeState.target)}: ${validation.coverageOk ? 'cover PASS' : 'cover FAIL'}`,
     validation.constraintsOk ? 'constraints PASS' : 'constraints FAIL',
@@ -1292,7 +1374,7 @@ function summarizeFreeValidation(validation: FreeValidationResult): string {
 }
 
 function renderFreePanel(validation: FreeValidationResult): void {
-  const targetButtons = (['S_HALF', 'S'] as FreeTarget[]).map((target) =>
+  const targetButtons = (['S_HALF', 'S', 'LOTUS'] as FreeTarget[]).map((target) =>
     `<button type="button" class="free-button${freeState.target === target ? ' is-active' : ''}" data-free-target="${target}">${describeTarget(target)}</button>`,
   ).join('');
   const toolButtons = (['move', 'd-mark', 's-mark'] as FreeTool[]).map((tool) =>
@@ -1314,7 +1396,7 @@ function renderFreePanel(validation: FreeValidationResult): void {
         </select>
       </label>
     `).join('');
-    const vd0Controls = triangle.id === 'C' ? '' : `
+    const vd0Controls = triangle.id === 'C' || freeState.target === 'LOTUS' ? '' : `
       <label><input type="checkbox" data-vd0-enabled="${triangle.id}"${triangle.vd0.enabled ? ' checked' : ''}/>Vd0</label>
       <label>Vd0 mode
         <select data-vd0-mode="${triangle.id}"${triangle.vd0.enabled ? '' : ' disabled'}>
