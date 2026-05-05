@@ -155,6 +155,7 @@ let freeInteractionApi: ReturnType<typeof setupFreeInteraction> | null = null;
 let sampleModeSavedTriangleStates: Partial<Record<FreeTriangleId, { hidden: boolean; fixed: boolean }>> | null = null;
 let currentV0Sample: VSample | RejectedSample | null = null;
 let currentCSample: CSample | RejectedSample | null = null;
+let showAllSamplePoints = false;
 
 interface ControllerSnapshot {
   version: 3;
@@ -1227,7 +1228,7 @@ function clampInteger(value: string | undefined, min: number, max: number): numb
 }
 
 function formatFreeSnapshot(): string {
-  return JSON.stringify({ version: 3, ...freeState }, null, 2);
+  return JSON.stringify({ ...freeState, version: 4 }, null, 2);
 }
 
 function isFreeSegmentRef(value: unknown): value is FreeSegmentRef {
@@ -1325,7 +1326,11 @@ function sanitizeSamplingStore(value: unknown): SamplingStore {
 
 function loadFreeSnapshot(raw: string): void {
   const parsed = JSON.parse(raw) as Partial<FreeState> & { version?: number };
-  if ((parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) || !Array.isArray(parsed.triangles) || parsed.triangles.length !== 7) {
+  if (
+    (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3 && parsed.version !== 4) ||
+    !Array.isArray(parsed.triangles) ||
+    parsed.triangles.length !== 7
+  ) {
     throw new Error('Invalid free snapshot.');
   }
   if (parsed.target !== undefined && !isFreeTarget(parsed.target)) {
@@ -1360,7 +1365,7 @@ function loadFreeSnapshot(raw: string): void {
     })) as FreeState['triangles'],
     labels,
     selectedSegments: [],
-    sampling: sanitizeSamplingStore(parsed.sampling),
+    sampling: parsed.version === 4 ? sanitizeSamplingStore(parsed.sampling) : { v: [], c: [], rejected: [] },
   } as FreeState;
   sampleModeSavedTriangleStates = null;
   freeInitializedFromCurrent = true;
@@ -1524,42 +1529,59 @@ function samplePointToSvg(point: { a: number; b: number }, size: { width: number
 
 function colorForSampleCase(caseId: string): string {
   const colors: Record<string, string> = {
-    'vd0-o1-empty': '#2563eb',
-    'vd0-o2-m0': '#0891b2',
-    'vd1-empty': '#16a34a',
-    'vd1-m0': '#65a30d',
-    'vd1-m1': '#ca8a04',
-    'vd1-m5': '#ea580c',
-    'vd1-m0-m1': '#dc2626',
-    'vd1-m0-m5': '#db2777',
-    'vd2-m0': '#9333ea',
-    'vd2-m0-m1': '#7c3aed',
-    'vd2-m0-m5': '#4f46e5',
-    'vd2-m0-m1-m5': '#0d9488',
-    't3-m1': '#475569',
-    't3-m5': '#111827',
+    'vd0-o1-empty': 'hsl(214, 84%, 48%)',
+    'vd0-o2-m0': 'hsl(188, 86%, 38%)',
+    'vd1-empty': 'hsl(132, 68%, 38%)',
+    'vd1-m0': 'hsl(82, 78%, 36%)',
+    'vd1-m1': 'hsl(48, 90%, 42%)',
+    'vd1-m5': 'hsl(25, 88%, 48%)',
+    'vd1-m0-m1': 'hsl(0, 76%, 50%)',
+    'vd1-m0-m5': 'hsl(326, 74%, 46%)',
+    'vd2-m0': 'hsl(276, 78%, 50%)',
+    'vd2-m0-m1': 'hsl(250, 76%, 54%)',
+    'vd2-m0-m5': 'hsl(226, 75%, 52%)',
+    'vd2-m0-m1-m5': 'hsl(170, 82%, 34%)',
+    't3-m1': 'hsl(30, 10%, 28%)',
+    't3-m5': 'hsl(210, 13%, 18%)',
   };
   return colors[caseId] ?? '#0f766e';
 }
 
-function renderVSamplePlot(summaries: VCaseSummary[]): string {
-  const size = { width: 500, height: 220, pad: 28 };
-  const axis = `
+function sampleAxis(size: { width: number; height: number; pad: number }, xLabel: string, yLabel: string): string {
+  const innerWidth = size.width - 2 * size.pad;
+  const innerHeight = size.height - 2 * size.pad;
+  const ticks = Array.from({ length: 11 }, (_, index) => {
+    const value = index / 10;
+    const x = size.pad + value * innerWidth;
+    const y = size.height - size.pad - value * innerHeight;
+    const label = index === 0 || index === 5 || index === 10 ? value.toString() : '';
+    return `
+      <line class="half-frontier-tick" x1="${x}" y1="${size.height - size.pad}" x2="${x}" y2="${size.height - size.pad + 4}" />
+      <line class="half-frontier-tick" x1="${size.pad - 4}" y1="${y}" x2="${size.pad}" y2="${y}" />
+      ${label ? `<text class="half-frontier-tick-label" x="${x}" y="${size.height - size.pad + 18}" text-anchor="middle">${label}</text>` : ''}
+      ${label ? `<text class="half-frontier-tick-label" x="${size.pad - 8}" y="${y + 4}" text-anchor="end">${label}</text>` : ''}
+    `;
+  }).join('');
+  return `
     <line x1="${size.pad}" y1="${size.height - size.pad}" x2="${size.width - size.pad}" y2="${size.height - size.pad}" />
     <line x1="${size.pad}" y1="${size.pad}" x2="${size.pad}" y2="${size.height - size.pad}" />
-    <text x="${size.width - size.pad}" y="${size.height - 8}" text-anchor="end">a</text>
-    <text x="10" y="${size.pad}" text-anchor="start">b</text>
+    ${ticks}
+    <text x="${size.width - size.pad}" y="${size.height - 8}" text-anchor="end">${xLabel}</text>
+    <text x="10" y="${size.pad}" text-anchor="start">${yLabel}</text>
   `;
-  const samples = summaries.flatMap((summary) => summary.samples).slice(-500).map((point) => {
-    const svgPoint = samplePointToSvg(point, size);
-    return `<circle cx="${svgPoint.x}" cy="${svgPoint.y}" r="1.6" style="fill:${colorForSampleCase(point.caseId)}" />`;
-  }).join('');
-  const pareto = summaries.map((summary) => {
-    const linePoints = summary.pareto.map((point) => {
+}
+
+function renderVSamplePlot(summaries: VCaseSummary[]): string {
+  const size = { width: 720, height: 420, pad: 54 };
+  const axis = sampleAxis(size, 'a', 'b');
+  const points = summaries.flatMap((summary) => {
+    const visibleSamples = showAllSamplePoints ? summary.samples : summary.pareto;
+    return visibleSamples.map((point) => {
       const svgPoint = samplePointToSvg(point, size);
-      return `${svgPoint.x.toFixed(2)},${svgPoint.y.toFixed(2)}`;
-    }).join(' ');
-    return linePoints ? `<polyline points="${linePoints}" style="stroke:${colorForSampleCase(summary.caseId)}" />` : '';
+      const isPareto = summary.pareto.includes(point);
+      const className = showAllSamplePoints && !isPareto ? ' class="half-frontier-nonfront"' : '';
+      return `<circle${className} cx="${svgPoint.x}" cy="${svgPoint.y}" r="${isPareto ? 3 : 2.2}" style="fill:${colorForSampleCase(point.caseId)}" />`;
+    });
   }).join('');
   const current = currentV0Sample && 'kind' in currentV0Sample && currentV0Sample.kind === 'v'
     ? (() => {
@@ -1567,7 +1589,20 @@ function renderVSamplePlot(summaries: VCaseSummary[]): string {
         return `<circle class="half-frontier-selected" cx="${point.x}" cy="${point.y}" r="4" style="fill:${colorForSampleCase(currentV0Sample.caseId)}" />`;
       })()
     : '';
-  return `<svg class="half-frontier-plot" viewBox="0 0 ${size.width} ${size.height}" role="img" aria-label="V0 sampling plot">${axis}${samples}${pareto}${current}</svg>`;
+  const legend = summaries.filter((summary) =>
+    showAllSamplePoints ? summary.samples.length > 0 : summary.pareto.length > 0,
+  ).map((summary) => `
+    <div class="half-frontier-legend-item">
+      <span class="half-frontier-swatch" style="background:${colorForSampleCase(summary.caseId)}"></span>
+      <span>${escapeHtml(summary.label)}</span>
+    </div>
+  `).join('');
+  return `
+    <div class="half-frontier-v-plot-block">
+      <svg class="half-frontier-plot half-frontier-v-plot" viewBox="0 0 ${size.width} ${size.height}" role="img" aria-label="V0 sampling plot">${axis}${points}${current}</svg>
+      <div class="half-frontier-legend" aria-label="V0 sampling color legend">${legend || '<div class="free-small-status">No front points.</div>'}</div>
+    </div>
+  `;
 }
 
 function endpointPointToSvg(point: { start: number; end: number }, size: { width: number; height: number; pad: number }): { x: number; y: number } {
@@ -1580,27 +1615,32 @@ function ce2Hue(index: number, count: number): string {
 }
 
 function endpointAxis(size: { width: number; height: number; pad: number }, xLabel: string, yLabel: string): string {
-  return `
-    <line x1="${size.pad}" y1="${size.height - size.pad}" x2="${size.width - size.pad}" y2="${size.height - size.pad}" />
-    <line x1="${size.pad}" y1="${size.pad}" x2="${size.pad}" y2="${size.height - size.pad}" />
-    <text x="${size.width - size.pad}" y="${size.height - 8}" text-anchor="end">${xLabel}</text>
-    <text x="10" y="${size.pad}" text-anchor="start">${yLabel}</text>
-  `;
+  return sampleAxis(size, xLabel, yLabel);
 }
 
 function renderCe1EndpointPlot(summary: CCaseSummary | undefined): string {
-  const size = { width: 500, height: 180, pad: 30 };
-  const points = summary?.samples.map((sample) => {
+  const size = { width: 500, height: 210, pad: 42 };
+  const visibleSamples = summary ? showAllSamplePoints ? summary.samples : summary.maximal : [];
+  const points = visibleSamples.map((sample) => {
     const point = endpointPointToSvg(sample.edge01, size);
-    const maximal = summary.maximal.includes(sample);
-    return `<circle class="${maximal ? 'half-frontier-endpoint is-maximal' : 'half-frontier-endpoint'}" cx="${point.x}" cy="${point.y}" r="${maximal ? 4 : 2.2}" />`;
-  }).join('') ?? '';
-  return `<svg class="half-frontier-plot" viewBox="0 0 ${size.width} ${size.height}" role="img" aria-label="CE1 endpoint plot">${endpointAxis(size, 'start e01', 'end e01')}${points}</svg>`;
+    const isMaximal = summary?.maximal.includes(sample) ?? false;
+    const className = isMaximal ? 'half-frontier-endpoint is-maximal' : 'half-frontier-endpoint half-frontier-nonfront';
+    return `<circle class="${className}" cx="${point.x}" cy="${point.y}" r="${isMaximal ? 4 : 2.2}" />`;
+  }).join('');
+  const current = currentCSample &&
+    !('reason' in currentCSample) &&
+    currentCSample.caseId === 'ce1-m0'
+    ? (() => {
+        const point = endpointPointToSvg(currentCSample.edge01, size);
+        return `<circle class="half-frontier-selected" cx="${point.x}" cy="${point.y}" r="4" />`;
+      })()
+    : '';
+  return `<svg class="half-frontier-plot" viewBox="0 0 ${size.width} ${size.height}" role="img" aria-label="CE1 endpoint plot">${endpointAxis(size, 'start e01', 'end e01')}${points}${current}</svg>`;
 }
 
 function renderCe2EndpointPlot(summary: CCaseSummary | undefined, edge: 'edge50' | 'edge01', label: string): string {
-  const size = { width: 500, height: 180, pad: 30 };
-  const samples = summary?.samples ?? [];
+  const size = { width: 500, height: 210, pad: 42 };
+  const samples = summary ? showAllSamplePoints ? summary.samples : summary.maximal : [];
   const ordered = samples
     .map((sample, index) => ({ sample, index }))
     .sort((a, b) => (a.sample.edge50?.start ?? 0) - (b.sample.edge50?.start ?? 0));
@@ -1608,11 +1648,22 @@ function renderCe2EndpointPlot(summary: CCaseSummary | undefined, edge: 'edge50'
     const interval = edge === 'edge50' ? sample.edge50 : sample.edge01;
     if (!interval) return '';
     const point = endpointPointToSvg(interval, size);
-    const maximal = summary?.maximal.includes(sample) ?? false;
     const color = ce2Hue(index, Math.max(1, ordered.length));
-    return `<circle class="${maximal ? 'half-frontier-endpoint is-maximal' : 'half-frontier-endpoint'}" cx="${point.x}" cy="${point.y}" r="${maximal ? 4 : 2.2}" style="fill:${color};stroke:${color}" />`;
+    const isMaximal = summary?.maximal.includes(sample) ?? false;
+    const className = isMaximal ? 'half-frontier-endpoint is-maximal' : 'half-frontier-endpoint half-frontier-nonfront';
+    return `<circle class="${className}" cx="${point.x}" cy="${point.y}" r="${isMaximal ? 4 : 2.2}" style="fill:${color};stroke:${color}" />`;
   }).join('');
-  return `<svg class="half-frontier-plot" viewBox="0 0 ${size.width} ${size.height}" role="img" aria-label="${label} endpoint plot">${endpointAxis(size, `start ${label}`, `end ${label}`)}${points}</svg>`;
+  const current = currentCSample &&
+    !('reason' in currentCSample) &&
+    currentCSample.caseId === 'ce2-m0'
+    ? (() => {
+        const interval = edge === 'edge50' ? currentCSample.edge50 : currentCSample.edge01;
+        if (!interval) return '';
+        const point = endpointPointToSvg(interval, size);
+        return `<circle class="half-frontier-selected" cx="${point.x}" cy="${point.y}" r="4" />`;
+      })()
+    : '';
+  return `<svg class="half-frontier-plot" viewBox="0 0 ${size.width} ${size.height}" role="img" aria-label="${label} endpoint plot">${endpointAxis(size, `start ${label}`, `end ${label}`)}${points}${current}</svg>`;
 }
 
 function renderCSamplePlot(summaries: CCaseSummary[]): string {
@@ -1653,6 +1704,7 @@ function renderSamplingPanel(): string {
       <div class="half-frontier-title">sampling</div>
       <div class="half-frontier-controls">
         <button type="button" class="free-button" data-clear-samples>clear samples</button>
+        <label><input type="checkbox" data-show-all-samples${showAllSamplePoints ? ' checked' : ''}/>show all points</label>
       </div>
       <div class="free-small-status">current V0: ${escapeHtml(currentSampleText(currentV0Sample))}</div>
       <div class="free-small-status">current C: ${escapeHtml(currentSampleText(currentCSample))}</div>
@@ -2106,6 +2158,11 @@ freeControls.addEventListener('click', (event) => {
 
 freeControls.addEventListener('change', (event) => {
   const target = event.target as HTMLInputElement | HTMLSelectElement;
+  if ('showAllSamples' in target.dataset) {
+    showAllSamplePoints = (target as HTMLInputElement).checked;
+    render();
+    return;
+  }
   const fixed = target.dataset.fixed;
   if (fixed) {
     const triangle = getTriangle(freeState, fixed as FreeTriangleId);

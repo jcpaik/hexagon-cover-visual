@@ -405,12 +405,29 @@ canvas {
   width: 82px;
 }
 
+.half-frontier-plot-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 170px;
+  gap: 8px;
+  align-items: start;
+}
+
+.half-frontier-v-plot-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .half-frontier-plot {
   width: 100%;
   height: auto;
   max-height: 240px;
   border: 1px solid #e2e8f0;
   background: #f8fafc;
+}
+
+.half-frontier-v-plot {
+  max-height: none;
 }
 
 .half-frontier-plot line {
@@ -445,6 +462,10 @@ canvas {
   opacity: 1;
 }
 
+.half-frontier-plot .half-frontier-nonfront {
+  opacity: 0.24;
+}
+
 .half-frontier-plot .half-frontier-interval {
   stroke: #0f766e;
   stroke-width: 3;
@@ -466,6 +487,36 @@ canvas {
 .half-frontier-plot .half-frontier-endpoint.is-maximal {
   opacity: 1;
   stroke-width: 2;
+}
+
+.half-frontier-legend {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11px;
+  color: #334155;
+}
+
+.half-frontier-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.half-frontier-swatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgb(15 23 42 / 18%);
+}
+
+@media (max-width: 760px) {
+  .half-frontier-plot-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 #free-state-panel {
