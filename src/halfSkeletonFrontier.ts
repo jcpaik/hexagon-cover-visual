@@ -102,9 +102,8 @@ function cross(a: Point, b: Point, p: Point): number {
   return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
 }
 
-function strictPointInTriangle(point: Point, vertices: [Point, Point, Point], strictEps: number): boolean {
-  const strict = Math.max(strictEps, EPS);
-  return vertices.every((vertex, index) => cross(vertex, vertices[(index + 1) % 3], point) > strict);
+function closedPointInTriangle(point: Point, vertices: [Point, Point, Point]): boolean {
+  return vertices.every((vertex, index) => cross(vertex, vertices[(index + 1) % 3], point) >= -EPS);
 }
 
 function closedPointInHexagon(point: Point): boolean {
@@ -115,20 +114,18 @@ function segmentInterval(
   start: Point,
   end: Point,
   vertices: [Point, Point, Point],
-  strictEps: number,
 ): Interval | null {
   let tMin = 0;
   let tMax = 1;
   const direction = { x: end.x - start.x, y: end.y - start.y };
-  const strict = Math.max(strictEps, EPS);
 
   for (let i = 0; i < vertices.length; i++) {
     const a = vertices[i];
     const b = vertices[(i + 1) % vertices.length];
-    const base = cross(a, b, start) - strict;
+    const base = cross(a, b, start);
     const delta = (b.x - a.x) * direction.y - (b.y - a.y) * direction.x;
     if (Math.abs(delta) < EPS) {
-      if (base < 0) return null;
+      if (base < -EPS) return null;
       continue;
     }
     const root = -base / delta;
@@ -145,27 +142,31 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
+function isInteriorInterval(interval: Interval): boolean {
+  return interval.start > EPS && interval.end < 1 - EPS;
+}
+
 function outsideVertexCount(vertices: [Point, Point, Point]): number {
   return vertices.filter((vertex) => !closedPointInHexagon(vertex)).length;
 }
 
-function adjacentRayIntersectionCount(vertices: [Point, Point, Point], strictEps: number): number {
+function adjacentRayIntersectionCount(vertices: [Point, Point, Point]): number {
   return [
-    segmentInterval(C, V5, vertices, strictEps),
-    segmentInterval(C, V1, vertices, strictEps),
+    segmentInterval(C, V5, vertices),
+    segmentInterval(C, V1, vertices),
   ].filter((interval) => interval && interval.end > interval.start + EPS).length;
 }
 
-function localMidpointSubsetKey(vertices: [Point, Point, Point], strictEps: number): string {
+function localMidpointSubsetKey(vertices: [Point, Point, Point]): string {
   return LOCAL_MIDPOINTS
-    .filter((index) => strictPointInTriangle(MIDPOINTS[index], vertices, strictEps))
+    .filter((index) => closedPointInTriangle(MIDPOINTS[index], vertices))
     .sort((a, b) => a - b)
     .join(',');
 }
 
-function exactCenterMidpointSubsetKey(vertices: [Point, Point, Point], strictEps: number): string {
+function exactCenterMidpointSubsetKey(vertices: [Point, Point, Point]): string {
   return MIDPOINTS
-    .flatMap((point, index) => strictPointInTriangle(point, vertices, strictEps) ? [index] : [])
+    .flatMap((point, index) => closedPointInTriangle(point, vertices) ? [index] : [])
     .join(',');
 }
 
@@ -175,16 +176,16 @@ function caseFor(o: number, n: number, subsetKey: string): VCase | null {
   ) ?? null;
 }
 
-export function classifyV0Sample(vertices: [Point, Point, Point], strictEps: number): VClassification {
-  const aInterval = segmentInterval(V0, V5, vertices, strictEps);
-  const bInterval = segmentInterval(V0, V1, vertices, strictEps);
+export function classifyV0Sample(vertices: [Point, Point, Point], _strictEps: number): VClassification {
+  const aInterval = segmentInterval(V0, V5, vertices);
+  const bInterval = segmentInterval(V0, V1, vertices);
   if (!aInterval || !bInterval) {
     return { ok: false, rejected: { triangleId: 'V0', reason: 'T0 does not cover both local boundary branches from V0.' } };
   }
 
   const o = outsideVertexCount(vertices);
-  const n = adjacentRayIntersectionCount(vertices, strictEps);
-  const subsetKey = localMidpointSubsetKey(vertices, strictEps);
+  const n = adjacentRayIntersectionCount(vertices);
+  const subsetKey = localMidpointSubsetKey(vertices);
   const matched = caseFor(o, n, subsetKey);
   if (!matched) {
     const subset = subsetKey ? `{M${subsetKey.split(',').join(',M')}}` : 'empty';
@@ -206,8 +207,8 @@ export function classifyV0Sample(vertices: [Point, Point, Point], strictEps: num
   };
 }
 
-export function classifyCSample(vertices: [Point, Point, Point], strictEps: number): CClassification {
-  const subsetKey = exactCenterMidpointSubsetKey(vertices, strictEps);
+export function classifyCSample(vertices: [Point, Point, Point], _strictEps: number): CClassification {
+  const subsetKey = exactCenterMidpointSubsetKey(vertices);
   if (subsetKey !== '0') {
     const subset = subsetKey ? `{M${subsetKey.split(',').join(',M')}}` : 'empty';
     return { ok: false, rejected: { triangleId: 'C', reason: `TC midpoint subset is ${subset}, not exact {M0}.` } };
@@ -215,10 +216,10 @@ export function classifyCSample(vertices: [Point, Point, Point], strictEps: numb
 
   const intervals = HEX.map((vertex, index) => ({
     index,
-    interval: segmentInterval(vertex, HEX[(index + 1) % HEX.length], vertices, strictEps),
+    interval: segmentInterval(vertex, HEX[(index + 1) % HEX.length], vertices),
   })).filter(({ interval }) => interval && interval.end > interval.start + EPS);
 
-  if (intervals.length === 1 && intervals[0].index === 0 && intervals[0].interval) {
+  if (intervals.length === 1 && intervals[0].index === 0 && intervals[0].interval && isInteriorInterval(intervals[0].interval)) {
     return {
       ok: true,
       sample: {
