@@ -282,9 +282,42 @@ To finish the contradiction argument, one still needs a rigorous statement of th
 
 The admissible-set description is the local input. The composition inequality is the global output. The non-coverability statement follows once those two pieces are connected without exception.
 
-## 12. The lotus target
+## 12. The variable point target \(S_t\)
 
-There is a second 1-dimensional target set used by the app, called **lotus**.
+Free mode also has a point target interpolating along the half-diagonals.
+For \(0\le t\le 1\), define
+\[
+P_i(t):=(1-t)V_i,\qquad i=0,\dots,5.
+\]
+Thus \(P_i(t)\in[O,V_i]\) and
+\[
+\operatorname{dist}(O,P_i(t))=1-t.
+\]
+
+The target is
+\[
+S_t:=S_{1/2}\cup\{P_0(t),\dots,P_5(t)\}.
+\]
+It keeps the whole hexagon boundary and the seven points
+\[
+O,M_0,\dots,M_5
+\]
+from \(S_{1/2}\), and adds one extra point on each half-diagonal.
+
+Special values are:
+
+- \(t=0\): \(P_i(t)=V_i\),
+- \(t=\tfrac12\): \(P_i(t)=M_i\),
+- \(t=1\): \(P_i(t)=O\).
+
+The app treats \(t\) as one shared parameter for all six points.  In Free mode,
+dragging any \(P_i(t)\) changes this shared \(t\), unless the `fix P_i(t)`
+control is enabled.  The fixed control only locks the UI handle; it does not
+change the mathematical target.
+
+## 13. The lotus target
+
+There is another 1-dimensional target set used by the app, called **lotus**.
 Let
 \[
 D_i := \{p : \|p-V_i\|\le 1\}

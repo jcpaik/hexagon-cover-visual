@@ -1,5 +1,6 @@
 import { canvasToMath, config, scaleToMath } from './coords';
 import { distanceToSegment, pointInTriangle } from './geometry';
+import { HEXAGON_VERTICES } from './hexagon';
 import {
   createLabel,
   getSegmentByRef,
@@ -7,6 +8,7 @@ import {
   refreshLabels,
   sameSegmentRef,
   skeletonSegments,
+  targetTPoint,
   triangleVertices,
 } from './freeGeometry';
 import type { FreeSegmentRef, FreeState, FreeTriangleId, FreeTriangleState } from './freeTypes';
@@ -14,6 +16,7 @@ import type { Point } from './types';
 
 const EDGE_HIT_PX = 7;
 const ROTATE_HIT_PX = 8;
+const TARGET_T_HIT_PX = 9;
 
 export interface FreeInteractionApi {
   setEnabled(enabled: boolean): void;
@@ -21,6 +24,11 @@ export interface FreeInteractionApi {
 
 type DragState =
   | { kind: 'idle' }
+  | {
+      kind: 'target-t';
+      pointerId: number;
+      index: number;
+    }
   | {
       kind: 'move-triangle';
       pointerId: number;
@@ -98,6 +106,29 @@ export function setupFreeInteraction(
     return best?.ref ?? null;
   }
 
+  function targetTHandleUnderPoint(point: Point): number | null {
+    const state = getState();
+    if (state.target !== 'S_T' || state.targetTFixed || state.tool !== 'move') {
+      return null;
+    }
+    const limit = scaleToMath(TARGET_T_HIT_PX);
+    let best: { index: number; distance: number } | null = null;
+    for (let i = 0; i < 6; i++) {
+      const handle = targetTPoint(state, i);
+      const distance = Math.hypot(point.x - handle.x, point.y - handle.y);
+      if (distance <= limit && (!best || distance < best.distance)) {
+        best = { index: i, distance };
+      }
+    }
+    return best?.index ?? null;
+  }
+
+  function setTargetTFromPoint(state: FreeState, index: number, point: Point): void {
+    const vertex = HEXAGON_VERTICES[index];
+    const radius = Math.max(0, Math.min(1, point.x * vertex.x + point.y * vertex.y));
+    state.targetT = 1 - radius;
+  }
+
   function distanceToArc(point: Point, arc: NonNullable<ReturnType<typeof skeletonSegments>[number]['arc']>): number {
     const rawAngle = Math.atan2(point.y - arc.center.y, point.x - arc.center.x);
     const relative = Math.atan2(Math.sin(rawAngle - arc.startAngle), Math.cos(rawAngle - arc.startAngle));
@@ -115,6 +146,10 @@ export function setupFreeInteraction(
     if (!enabled) return;
     if (state.tool === 'd-mark' || state.tool === 's-mark') {
       canvas.style.cursor = segmentUnderPoint(point) ? 'crosshair' : 'default';
+      return;
+    }
+    if (targetTHandleUnderPoint(point) !== null) {
+      canvas.style.cursor = 'ew-resize';
       return;
     }
     const selected = selectedTriangle();
@@ -166,6 +201,21 @@ export function setupFreeInteraction(
       return;
     }
 
+    const targetTHandle = targetTHandleUnderPoint(point);
+    if (targetTHandle !== null) {
+      dragState = {
+        kind: 'target-t',
+        pointerId: e.pointerId,
+        index: targetTHandle,
+      };
+      canvas.setPointerCapture(e.pointerId);
+      setTargetTFromPoint(state, targetTHandle, point);
+      refreshLabels(state);
+      render();
+      e.preventDefault();
+      return;
+    }
+
     const triangle = triangleUnderPoint(point);
     if (!triangle) {
       updateCursor(point);
@@ -196,6 +246,13 @@ export function setupFreeInteraction(
     }
     const activeDrag = dragState;
     if (activeDrag.pointerId !== e.pointerId) return;
+    if (activeDrag.kind === 'target-t') {
+      setTargetTFromPoint(state, activeDrag.index, point);
+      refreshLabels(state);
+      render();
+      e.preventDefault();
+      return;
+    }
     const triangle = state.triangles.find((candidate) => candidate.id === activeDrag.triangleId);
     if (!triangle || triangle.fixed || triangle.hidden) return;
 

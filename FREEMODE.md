@@ -31,7 +31,7 @@ M_i=\frac12 V_i.
 
 ## Targets
 
-Free mode has three covering targets.
+Free mode has four covering targets.
 
 The full skeleton is
 
@@ -47,6 +47,27 @@ S_{1/2}=\partial H\cup\{O,M_0,\dots,M_5\}.
 
 Thus \(S_{1/2}\) still includes the whole boundary \(\partial H\), but replaces
 the six half-diagonal segments with seven marked points.
+
+The variable point target is
+
+\[
+S_t=S_{1/2}\cup\{P_0(t),\dots,P_5(t)\},
+\qquad 0\le t\le 1,
+\]
+
+where
+
+\[
+P_i(t)=(1-t)V_i.
+\]
+
+Thus \(P_i(t)\) lies on the half-diagonal \([O,V_i]\) at distance \(1-t\)
+from \(O\).  The Free-mode default is \(t=0.3\).  When \(S_t\) is selected,
+the six points \(P_i(t)\) are drawn on the canvas.  Dragging any one of them
+along its half-diagonal changes the shared value of \(t\), so all six points
+move together.  The `fix P_i(t)` checkbox locks this drag interaction; it does
+not remove the points from the covering target and does not add a triangle
+constraint.
 
 The lotus target is a one-dimensional curve target.  Let
 
@@ -150,6 +171,7 @@ Named points include:
 
 - \(O\),
 - the six \(M_i\),
+- the six \(P_i(t)\),
 - the six \(V_i\),
 - dynamic labeled intersection points,
 - static labeled intersection points,
@@ -186,9 +208,10 @@ an edge-through-point constraint.
 
 For a \(V_i\)-triangle, Vd0 computes raw \(a,b,c\) from the farthest uncovered
 point on the three incident skeleton branches by default.  Each raw coordinate
-can instead use the current vertex \(V_i\), a marked label, or the relevant
-midpoint \(M_i\), when that point lies on the coordinate branch.  The value is
-measured as distance from \(V_i\) along the branch:
+can instead use the current vertex \(V_i\), a marked label, a target point
+\(P_j(t)\), or the relevant midpoint \(M_i\), when that point lies on the
+coordinate branch.  The value is measured as distance from \(V_i\) along the
+branch:
 
 - \(a\) uses \([V_i,V_{i-1}]\),
 - \(b\) uses \([V_i,V_{i+1}]\),
@@ -258,6 +281,13 @@ For target \(S_{1/2}\), a free-mode configuration is valid when:
 1. all active constraints are satisfied with the strict epsilon margin,
 2. every boundary edge has no uncovered interval, and
 3. \(O,M_0,\dots,M_5\) are each covered by at least one triangle.
+
+For target \(S_t\), a free-mode configuration is valid when:
+
+1. all active constraints are satisfied with the strict epsilon margin,
+2. every boundary edge has no uncovered interval, and
+3. \(O,M_0,\dots,M_5,P_0(t),\dots,P_5(t)\) are each covered by at least one
+   triangle.
 
 For target Lotus, a free-mode configuration is valid when:
 

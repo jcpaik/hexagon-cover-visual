@@ -26,6 +26,7 @@ const VD0_SEARCH_STEPS = 48;
 const EPS = 1e-9;
 const VD0_FIT_SIDE_TOLERANCE = 1e-8;
 const LOTUS_RADIUS = 1;
+export const DEFAULT_TARGET_T = 0.3;
 
 const FREE_COLORS: Record<FreeTriangleId, string> = {
   C: '#0ea5e9',
@@ -40,6 +41,12 @@ const FREE_COLORS: Record<FreeTriangleId, string> = {
 export function midpoint(index: number): Point {
   const vertex = HEXAGON_VERTICES[index];
   return { x: vertex.x / 2, y: vertex.y / 2 };
+}
+
+export function targetTPoint(state: Pick<FreeState, 'targetT'>, index: number): Point {
+  const vertex = HEXAGON_VERTICES[index];
+  const radius = 1 - clamp01(state.targetT);
+  return { x: vertex.x * radius, y: vertex.y * radius };
 }
 
 export function triangleVertices(center: Point, angle: number): [Point, Point, Point] {
@@ -69,6 +76,8 @@ export function createDefaultFreeState(): FreeState {
 
   return {
     target: 'S_HALF',
+    targetT: DEFAULT_TARGET_T,
+    targetTFixed: false,
     tool: 'move',
     strictEps: 1e-5,
     selectedTriangleId: 'C',
@@ -151,6 +160,7 @@ export function strictPointInTriangle(point: Point, triangle: FreeTriangleState,
 export function namedPointLabel(ref: FreeNamedPointRef): string {
   if (ref.kind === 'O') return 'O';
   if (ref.kind === 'M') return `M${ref.index ?? 0}`;
+  if (ref.kind === 'P') return `P${ref.index ?? 0}(t)`;
   if (ref.kind === 'V') return `V${ref.index ?? 0}`;
   if (ref.kind === 'label') return ref.labelId ?? 'label';
   return 'manual';
@@ -159,6 +169,7 @@ export function namedPointLabel(ref: FreeNamedPointRef): string {
 export function resolveNamedPoint(state: FreeState, ref: FreeNamedPointRef): Point | null {
   if (ref.kind === 'O') return { x: 0, y: 0 };
   if (ref.kind === 'M') return midpoint(ref.index ?? 0);
+  if (ref.kind === 'P') return targetTPoint(state, ref.index ?? 0);
   if (ref.kind === 'V') return HEXAGON_VERTICES[ref.index ?? 0] ?? null;
   if (ref.kind === 'manual') return ref.manualPoint ?? null;
   const label = state.labels.find((candidate) => candidate.id === ref.labelId);
@@ -547,6 +558,7 @@ export function getFreeVd0RawSourceOptions(
   const refs: FreeNamedPointRef[] = [
     { kind: 'V', index: vertexIndex },
     ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'M', index }) as FreeNamedPointRef),
+    ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'P', index }) as FreeNamedPointRef),
     ...state.labels.map((label) => ({ kind: 'label', labelId: label.id }) as FreeNamedPointRef),
   ];
   return refs.flatMap((ref) => {
@@ -781,8 +793,14 @@ export function validateFreeState(state: FreeState): FreeValidationResult {
   }
 
   const pointFailures: string[] = [];
-  if (state.target === 'S_HALF') {
-    const points = [{ label: 'O', point: { x: 0, y: 0 } }, ...[0, 1, 2, 3, 4, 5].map((i) => ({ label: `M${i}`, point: midpoint(i) }))];
+  if (state.target === 'S_HALF' || state.target === 'S_T') {
+    const points = [
+      { label: 'O', point: { x: 0, y: 0 } },
+      ...[0, 1, 2, 3, 4, 5].map((i) => ({ label: `M${i}`, point: midpoint(i) })),
+      ...(state.target === 'S_T'
+        ? [0, 1, 2, 3, 4, 5].map((i) => ({ label: `P${i}(t)`, point: targetTPoint(state, i) }))
+        : []),
+    ];
     for (const { label, point } of points) {
       if (!state.triangles.some((triangle) => strictPointInTriangle(point, triangle, state.strictEps))) {
         pointFailures.push(label);
@@ -1029,6 +1047,7 @@ export function createLabel(
 
 export function describeTarget(target: FreeTarget): string {
   if (target === 'S') return 'S';
+  if (target === 'S_T') return 'S_t';
   if (target === 'LOTUS') return 'Lotus';
   return 'S_{1/2}';
 }
