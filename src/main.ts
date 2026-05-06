@@ -34,6 +34,7 @@ import {
 import {
   allowedMidpointIndices,
   autoPlaceAllFreeVd0Triangles,
+  benzenePoint,
   colorForTriangle,
   createDefaultFreeState,
   DEFAULT_TARGET_T,
@@ -1125,6 +1126,21 @@ function drawFreeMode(ctx2d: CanvasRenderingContext2D, validation: FreeValidatio
     }
   }
 
+  if (freeState.target === 'BENZENE') {
+    for (let i = 0; i < 6; i++) {
+      const point = mathToCanvas(benzenePoint(i));
+      ctx2d.beginPath();
+      ctx2d.arc(point.x, point.y, 5, 0, 2 * Math.PI);
+      ctx2d.fillStyle = validation.pointFailures.includes(`B${i}`) ? '#dc2626' : '#7c3aed';
+      ctx2d.fill();
+      ctx2d.strokeStyle = '#4c1d95';
+      ctx2d.lineWidth = 1.5;
+      ctx2d.stroke();
+      ctx2d.fillStyle = '#4c1d95';
+      ctx2d.fillText(`B${i}`, point.x + 7, point.y - 7);
+    }
+  }
+
   for (const label of freeState.labels) {
     if (!label.point) {
       continue;
@@ -1175,6 +1191,7 @@ function namedPointOptions(selected: FreeNamedPointRef | null): string {
     { kind: 'O' },
     ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'M', index }) as FreeNamedPointRef),
     ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'P', index }) as FreeNamedPointRef),
+    ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'B', index }) as FreeNamedPointRef),
     ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'V', index }) as FreeNamedPointRef),
     ...freeState.labels.map((label) => ({ kind: 'label', labelId: label.id }) as FreeNamedPointRef),
   ];
@@ -1219,6 +1236,7 @@ function encodeNamedPointRef(ref: FreeNamedPointRef): string {
   if (ref.kind === 'O') return 'O';
   if (ref.kind === 'M') return `M:${ref.index ?? 0}`;
   if (ref.kind === 'P') return `PT:${ref.index ?? 0}`;
+  if (ref.kind === 'B') return `B:${ref.index ?? 0}`;
   if (ref.kind === 'V') return `V:${ref.index ?? 0}`;
   if (ref.kind === 'label') return `L:${ref.labelId ?? ''}`;
   const point = ref.manualPoint ?? { x: 0, y: 0 };
@@ -1230,6 +1248,7 @@ function decodeNamedPointRef(value: string): FreeNamedPointRef | null {
   const [kind, raw] = value.split(':');
   if (kind === 'M') return { kind: 'M', index: clampInteger(raw, 0, 5) };
   if (kind === 'PT') return { kind: 'P', index: clampInteger(raw, 0, 5) };
+  if (kind === 'B') return { kind: 'B', index: clampInteger(raw, 0, 5) };
   if (kind === 'V') return { kind: 'V', index: clampInteger(raw, 0, 5) };
   if (kind === 'L') return { kind: 'label', labelId: raw };
   if (kind === 'P') {
@@ -1272,7 +1291,7 @@ function isFreeTool(value: unknown): value is FreeTool {
 }
 
 function isFreeTarget(value: unknown): value is FreeTarget {
-  return value === 'S_HALF' || value === 'S_T' || value === 'S' || value === 'LOTUS';
+  return value === 'S_HALF' || value === 'S_T' || value === 'S' || value === 'BENZENE' || value === 'LOTUS';
 }
 
 function isFixedFreeSegmentRef(value: unknown): value is FreeSegmentRef {
@@ -1744,7 +1763,7 @@ function renderSamplingPanel(): string {
 }
 
 function renderFreePanel(validation: FreeValidationResult): void {
-  const targetButtons = (['S_HALF', 'S_T', 'S', 'LOTUS'] as FreeTarget[]).map((target) =>
+  const targetButtons = (['S_HALF', 'S_T', 'S', 'BENZENE', 'LOTUS'] as FreeTarget[]).map((target) =>
     `<button type="button" class="free-button${freeState.target === target ? ' is-active' : ''}" data-free-target="${target}">${describeTarget(target)}</button>`,
   ).join('');
   const targetTControls = freeState.target === 'S_T'
@@ -2268,7 +2287,7 @@ freeControls.addEventListener('change', (event) => {
       delete triangle.vd0.rawSources[coordinate];
     } else {
       const source = decodeNamedPointRef(target.value);
-      if (source?.kind === 'V' || source?.kind === 'M' || source?.kind === 'P' || source?.kind === 'label') {
+      if (source?.kind === 'V' || source?.kind === 'M' || source?.kind === 'P' || source?.kind === 'B' || source?.kind === 'label') {
         triangle.vd0.rawSources[coordinate] = source;
       }
     }

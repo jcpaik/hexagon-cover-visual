@@ -31,7 +31,7 @@ M_i=\frac12 V_i.
 
 ## Targets
 
-Free mode has four covering targets.
+Free mode has five covering targets.
 
 The full skeleton is
 
@@ -68,6 +68,22 @@ along its half-diagonal changes the shared value of \(t\), so all six points
 move together.  The `fix P_i(t)` checkbox locks this drag interaction; it does
 not remove the points from the covering target and does not add a triangle
 constraint.
+
+The Benzene target adds one fixed point in each center subtriangle
+\(\triangle O V_i V_{i+1}\).  Define
+
+\[
+B_i=\frac{O+V_i+V_{i+1}}{3}=\frac{V_i+V_{i+1}}{3}.
+\]
+
+Then
+
+\[
+\operatorname{Benzene}=S\cup\{B_0,\dots,B_5\}.
+\]
+
+The six points \(B_i\) are fixed centroids; they are drawn when Benzene is
+selected and have no separate drag interaction.
 
 The lotus target is a one-dimensional curve target.  Let
 
@@ -172,6 +188,7 @@ Named points include:
 - \(O\),
 - the six \(M_i\),
 - the six \(P_i(t)\),
+- the six \(B_i\),
 - the six \(V_i\),
 - dynamic labeled intersection points,
 - static labeled intersection points,
@@ -209,9 +226,9 @@ an edge-through-point constraint.
 For a \(V_i\)-triangle, Vd0 computes raw \(a,b,c\) from the farthest uncovered
 point on the three incident skeleton branches by default.  Each raw coordinate
 can instead use the current vertex \(V_i\), a marked label, a target point
-\(P_j(t)\), or the relevant midpoint \(M_i\), when that point lies on the
-coordinate branch.  The value is measured as distance from \(V_i\) along the
-branch:
+\(P_j(t)\), a Benzene point \(B_j\), or the relevant midpoint \(M_i\), when
+that point lies on the coordinate branch.  The value is measured as distance
+from \(V_i\) along the branch:
 
 - \(a\) uses \([V_i,V_{i-1}]\),
 - \(b\) uses \([V_i,V_{i+1}]\),
@@ -288,6 +305,12 @@ For target \(S_t\), a free-mode configuration is valid when:
 2. every boundary edge has no uncovered interval, and
 3. \(O,M_0,\dots,M_5,P_0(t),\dots,P_5(t)\) are each covered by at least one
    triangle.
+
+For target Benzene, a free-mode configuration is valid when:
+
+1. all active constraints are satisfied with the strict epsilon margin,
+2. every boundary edge and every half-diagonal has no uncovered interval, and
+3. \(B_0,\dots,B_5\) are each covered by at least one triangle.
 
 For target Lotus, a free-mode configuration is valid when:
 

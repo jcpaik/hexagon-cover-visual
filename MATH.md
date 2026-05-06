@@ -315,7 +315,30 @@ dragging any \(P_i(t)\) changes this shared \(t\), unless the `fix P_i(t)`
 control is enabled.  The fixed control only locks the UI handle; it does not
 change the mathematical target.
 
-## 13. The lotus target
+## 13. The Benzene target
+
+Free mode also has a target called **Benzene**.  It adds one fixed point in
+each center subtriangle
+\[
+\triangle O V_i V_{i+1},\qquad i=0,\dots,5,
+\]
+with indices taken mod `6`.
+
+Define
+\[
+B_i:=\frac{O+V_i+V_{i+1}}{3}=\frac{V_i+V_{i+1}}{3}.
+\]
+Thus \(B_i\) is the centroid of the subtriangle \(\triangle O V_i V_{i+1}\).
+
+The Benzene target is
+\[
+\operatorname{Benzene}:=S\cup\{B_0,\dots,B_5\}.
+\]
+Equivalently, it is the full skeleton together with these six interior
+centroid points.  The \(B_i\) are fixed points; there is no additional
+parameter or drag interaction.
+
+## 14. The lotus target
 
 There is another 1-dimensional target set used by the app, called **lotus**.
 Let
