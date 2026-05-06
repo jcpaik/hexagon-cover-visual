@@ -34,8 +34,10 @@ import {
 import {
   allowedMidpointIndices,
   autoPlaceAllFreeVd0Triangles,
+  benzenePoint,
   colorForTriangle,
   createDefaultFreeState,
+  DEFAULT_TARGET_T,
   describeTarget,
   getSegmentByRef,
   getFreeVd0Status,
@@ -47,6 +49,7 @@ import {
   projectTriangleToConstraints,
   refreshLabels,
   sameSegmentRef,
+  targetTPoint,
   triangleVertices,
   validateFreeState,
 } from './freeGeometry';
@@ -1108,6 +1111,36 @@ function drawFreeMode(ctx2d: CanvasRenderingContext2D, validation: FreeValidatio
     ctx2d.fillText(`M${i}`, point.x + 5, point.y - 5);
   }
 
+  if (freeState.target === 'S_T') {
+    for (let i = 0; i < 6; i++) {
+      const point = mathToCanvas(targetTPoint(freeState, i));
+      ctx2d.beginPath();
+      ctx2d.arc(point.x, point.y, 6, 0, 2 * Math.PI);
+      ctx2d.fillStyle = validation.pointFailures.includes(`P${i}(t)`) ? '#dc2626' : '#f97316';
+      ctx2d.fill();
+      ctx2d.strokeStyle = freeState.targetTFixed ? '#92400e' : '#7c2d12';
+      ctx2d.lineWidth = freeState.targetTFixed ? 2 : 1.5;
+      ctx2d.stroke();
+      ctx2d.fillStyle = '#7c2d12';
+      ctx2d.fillText(`P${i}(t)`, point.x + 7, point.y + 12);
+    }
+  }
+
+  if (freeState.target === 'BENZENE') {
+    for (let i = 0; i < 6; i++) {
+      const point = mathToCanvas(benzenePoint(i));
+      ctx2d.beginPath();
+      ctx2d.arc(point.x, point.y, 5, 0, 2 * Math.PI);
+      ctx2d.fillStyle = validation.pointFailures.includes(`B${i}`) ? '#dc2626' : '#7c3aed';
+      ctx2d.fill();
+      ctx2d.strokeStyle = '#4c1d95';
+      ctx2d.lineWidth = 1.5;
+      ctx2d.stroke();
+      ctx2d.fillStyle = '#4c1d95';
+      ctx2d.fillText(`B${i}`, point.x + 7, point.y - 7);
+    }
+  }
+
   for (const label of freeState.labels) {
     if (!label.point) {
       continue;
@@ -1157,6 +1190,8 @@ function namedPointOptions(selected: FreeNamedPointRef | null): string {
   const refs: FreeNamedPointRef[] = [
     { kind: 'O' },
     ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'M', index }) as FreeNamedPointRef),
+    ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'P', index }) as FreeNamedPointRef),
+    ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'B', index }) as FreeNamedPointRef),
     ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'V', index }) as FreeNamedPointRef),
     ...freeState.labels.map((label) => ({ kind: 'label', labelId: label.id }) as FreeNamedPointRef),
   ];
@@ -1200,6 +1235,8 @@ function sameNamedPointRef(a: FreeNamedPointRef, b: FreeNamedPointRef | null): b
 function encodeNamedPointRef(ref: FreeNamedPointRef): string {
   if (ref.kind === 'O') return 'O';
   if (ref.kind === 'M') return `M:${ref.index ?? 0}`;
+  if (ref.kind === 'P') return `PT:${ref.index ?? 0}`;
+  if (ref.kind === 'B') return `B:${ref.index ?? 0}`;
   if (ref.kind === 'V') return `V:${ref.index ?? 0}`;
   if (ref.kind === 'label') return `L:${ref.labelId ?? ''}`;
   const point = ref.manualPoint ?? { x: 0, y: 0 };
@@ -1210,6 +1247,8 @@ function decodeNamedPointRef(value: string): FreeNamedPointRef | null {
   if (value === 'O') return { kind: 'O' };
   const [kind, raw] = value.split(':');
   if (kind === 'M') return { kind: 'M', index: clampInteger(raw, 0, 5) };
+  if (kind === 'PT') return { kind: 'P', index: clampInteger(raw, 0, 5) };
+  if (kind === 'B') return { kind: 'B', index: clampInteger(raw, 0, 5) };
   if (kind === 'V') return { kind: 'V', index: clampInteger(raw, 0, 5) };
   if (kind === 'L') return { kind: 'label', labelId: raw };
   if (kind === 'P') {
@@ -1228,7 +1267,7 @@ function clampInteger(value: string | undefined, min: number, max: number): numb
 }
 
 function formatFreeSnapshot(): string {
-  return JSON.stringify({ ...freeState, version: 4 }, null, 2);
+  return JSON.stringify({ ...freeState, version: 5 }, null, 2);
 }
 
 function isFreeSegmentRef(value: unknown): value is FreeSegmentRef {
@@ -1252,7 +1291,7 @@ function isFreeTool(value: unknown): value is FreeTool {
 }
 
 function isFreeTarget(value: unknown): value is FreeTarget {
-  return value === 'S_HALF' || value === 'S' || value === 'LOTUS';
+  return value === 'S_HALF' || value === 'S_T' || value === 'S' || value === 'BENZENE' || value === 'LOTUS';
 }
 
 function isFixedFreeSegmentRef(value: unknown): value is FreeSegmentRef {
@@ -1327,7 +1366,7 @@ function sanitizeSamplingStore(value: unknown): SamplingStore {
 function loadFreeSnapshot(raw: string): void {
   const parsed = JSON.parse(raw) as Partial<FreeState> & { version?: number };
   if (
-    (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3 && parsed.version !== 4) ||
+    (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3 && parsed.version !== 4 && parsed.version !== 5) ||
     !Array.isArray(parsed.triangles) ||
     parsed.triangles.length !== 7
   ) {
@@ -1338,6 +1377,12 @@ function loadFreeSnapshot(raw: string): void {
   }
   if (parsed.tool !== undefined && !isFreeTool(parsed.tool)) {
     throw new Error('Invalid free snapshot tool.');
+  }
+  if (parsed.targetT !== undefined && (typeof parsed.targetT !== 'number' || !Number.isFinite(parsed.targetT))) {
+    throw new Error('Invalid free snapshot t.');
+  }
+  if (parsed.targetTFixed !== undefined && typeof parsed.targetTFixed !== 'boolean') {
+    throw new Error('Invalid free snapshot targetTFixed.');
   }
   if (parsed.labels !== undefined && !Array.isArray(parsed.labels)) {
     throw new Error('Invalid free snapshot labels.');
@@ -1351,6 +1396,8 @@ function loadFreeSnapshot(raw: string): void {
     ...defaults,
     ...parsed,
     target: parsed.version === 1 && parsed.target === 'LOTUS' ? defaults.target : parsed.target ?? defaults.target,
+    targetT: clamp01(parsed.targetT ?? DEFAULT_TARGET_T),
+    targetTFixed: parsed.targetTFixed ?? false,
     triangles: parsed.triangles.map((triangle, index) => ({
       ...defaults.triangles[index],
       ...triangle,
@@ -1365,7 +1412,7 @@ function loadFreeSnapshot(raw: string): void {
     })) as FreeState['triangles'],
     labels,
     selectedSegments: [],
-    sampling: parsed.version === 4 ? sanitizeSamplingStore(parsed.sampling) : { v: [], c: [], rejected: [] },
+    sampling: parsed.version === 4 || parsed.version === 5 ? sanitizeSamplingStore(parsed.sampling) : { v: [], c: [], rejected: [] },
   } as FreeState;
   sampleModeSavedTriangleStates = null;
   freeInitializedFromCurrent = true;
@@ -1716,9 +1763,12 @@ function renderSamplingPanel(): string {
 }
 
 function renderFreePanel(validation: FreeValidationResult): void {
-  const targetButtons = (['S_HALF', 'S', 'LOTUS'] as FreeTarget[]).map((target) =>
+  const targetButtons = (['S_HALF', 'S_T', 'S', 'BENZENE', 'LOTUS'] as FreeTarget[]).map((target) =>
     `<button type="button" class="free-button${freeState.target === target ? ' is-active' : ''}" data-free-target="${target}">${describeTarget(target)}</button>`,
   ).join('');
+  const targetTControls = freeState.target === 'S_T'
+    ? `<label><input type="checkbox" data-target-t-fixed${freeState.targetTFixed ? ' checked' : ''}/>fix P_i(t)</label><span class="free-small-status">t=${freeState.targetT.toFixed(3)}</span>`
+    : '';
   const toolButtons = (['move', 'd-mark', 's-mark', 'sample'] as FreeTool[]).map((tool) =>
     `<button type="button" class="free-button${freeState.tool === tool ? ' is-active' : ''}" data-free-tool="${tool}">${tool}</button>`,
   ).join('');
@@ -1786,7 +1836,7 @@ function renderFreePanel(validation: FreeValidationResult): void {
   freeStatus.textContent = summarizeFreeValidation(validation);
   freeStatus.style.color = validation.coverageOk && validation.constraintsOk ? '#047857' : '#b91c1c';
   freeControls.innerHTML = `
-    <div class="free-toolbar">target ${targetButtons}</div>
+    <div class="free-toolbar">target ${targetButtons}${targetTControls}</div>
     <div class="free-toolbar">tool ${toolButtons}</div>
     ${renderSamplingPanel()}
     <div class="free-row"><span>${freeState.status}</span></div>
@@ -1899,7 +1949,9 @@ function render(): void {
     drawFreeMode(ctx, currentFreeValidation);
 
     gammaValues.textContent = 'free mode: seven independent unit triangles';
-    localCBounds.textContent = `target = ${describeTarget(freeState.target)}`;
+    localCBounds.textContent = freeState.target === 'S_T'
+      ? `target = ${describeTarget(freeState.target)}, t = ${freeState.targetT.toFixed(3)}`
+      : `target = ${describeTarget(freeState.target)}`;
     localCValues.textContent = `selected = ${freeState.selectedTriangleId}; tool = ${freeState.tool}`;
     ceStatus.textContent = 'CE/g-chain inactive in Free mode';
     ceChainStatus.textContent = 'Free mode uses direct covering checks';
@@ -2163,6 +2215,11 @@ freeControls.addEventListener('change', (event) => {
     render();
     return;
   }
+  if ('targetTFixed' in target.dataset) {
+    freeState.targetTFixed = (target as HTMLInputElement).checked;
+    render();
+    return;
+  }
   const fixed = target.dataset.fixed;
   if (fixed) {
     const triangle = getTriangle(freeState, fixed as FreeTriangleId);
@@ -2230,7 +2287,7 @@ freeControls.addEventListener('change', (event) => {
       delete triangle.vd0.rawSources[coordinate];
     } else {
       const source = decodeNamedPointRef(target.value);
-      if (source?.kind === 'V' || source?.kind === 'M' || source?.kind === 'label') {
+      if (source?.kind === 'V' || source?.kind === 'M' || source?.kind === 'P' || source?.kind === 'B' || source?.kind === 'label') {
         triangle.vd0.rawSources[coordinate] = source;
       }
     }
