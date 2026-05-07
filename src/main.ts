@@ -1951,6 +1951,10 @@ function toggleSelectedHalfDiagonal(index: number): void {
   selectedHalfDiagonalIndices = [...selectedHalfDiagonalIndices, index];
 }
 
+function isCoverOverlayAvailable(): boolean {
+  return shapeMode !== 'free';
+}
+
 function syncModeButtons(): void {
   if (shapeMode === 'triangle') {
     shapeTitle.textContent = 'C-triangle';
@@ -1973,9 +1977,9 @@ function syncModeButtons(): void {
   graphPanel.hidden = freeActive;
   freePanel.hidden = !freeActive;
   freeInteractionApi?.setEnabled(freeActive);
-  coverOverlayToggle.disabled = shapeMode !== 'triangle';
-  coverOverlayToggle.checked = showCoverOverlay && shapeMode === 'triangle';
-  coverOverlayToggleRow.classList.toggle('is-disabled', shapeMode !== 'triangle');
+  coverOverlayToggle.disabled = !isCoverOverlayAvailable();
+  coverOverlayToggle.checked = showCoverOverlay && isCoverOverlayAvailable();
+  coverOverlayToggleRow.classList.toggle('is-disabled', !isCoverOverlayAvailable());
 }
 
 function setAdmissibleStatus(text: string, isError = false): void {
@@ -2075,7 +2079,7 @@ function render(): void {
   const ce = shapeMode === 'triangle' ? getCPerimeterIntersections(triangleState) : null;
   const chain = buildChainDescriptor(localCs, ce);
   currentChain = chain;
-  const coverResult = shapeMode === 'triangle' && showCoverOverlay
+  const coverResult = isCoverOverlayAvailable() && showCoverOverlay
     ? computeCoverResult(
         triangleState,
         chain.localCs,
@@ -2083,6 +2087,7 @@ function render(): void {
         strict,
         chain.vertexOrder,
         chain.direction,
+        shapeMode === 'triangle',
       )
     : null;
   syncCeControls(ce);
@@ -2123,8 +2128,8 @@ function render(): void {
     coverOverlayStatus.style.color = coverResult.coverageOk && coverResult.tooLargeTriangles.length === 0
       ? '#047857'
       : '#b91c1c';
-  } else if (shapeMode !== 'triangle') {
-    coverOverlayStatus.textContent = 'cover overlay available in Triangle mode';
+  } else if (!isCoverOverlayAvailable()) {
+    coverOverlayStatus.textContent = 'Free mode owns triangle overlay';
     coverOverlayStatus.style.color = '#64748b';
   } else {
     coverOverlayStatus.textContent = 'cover overlay off';
@@ -2186,7 +2191,7 @@ strictEpsMaxInput.addEventListener('change', () => {
 });
 
 coverOverlayToggle.addEventListener('change', () => {
-  showCoverOverlay = coverOverlayToggle.checked && shapeMode === 'triangle';
+  showCoverOverlay = coverOverlayToggle.checked && isCoverOverlayAvailable();
   syncModeButtons();
   render();
 });

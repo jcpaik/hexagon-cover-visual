@@ -354,12 +354,15 @@ export function computeCoverResult(
   strict: number,
   vertexOrder = [0, 1, 2, 3, 4, 5],
   direction: CoverChainDirection = 'ccw',
+  includeCentralTriangle = true,
 ): CoverResult {
   const steps = buildCoverSteps(localCs, startValue, strict, vertexOrder, direction);
   const vTriangles = steps.map((step) =>
     fitTriangle(`V${step.index}`, localPoints(step.index, step), COLORS[step.index]),
   );
-  const allTriangles = [buildCentralCoverTriangle(triangleState), ...vTriangles];
+  const allTriangles = includeCentralTriangle
+    ? [buildCentralCoverTriangle(triangleState), ...vTriangles]
+    : vTriangles;
   const segments = buildCoverageReport(allTriangles);
   const tooLargeTriangles = vTriangles
     .filter((triangle) => triangle.side >= 1 - 1e-9)
