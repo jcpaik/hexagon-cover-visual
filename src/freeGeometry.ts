@@ -8,6 +8,7 @@ import {
   type FreeSegment,
   type FreeSegmentRef,
   type FreeState,
+  type FreeTargetTPoint,
   type FreeTarget,
   type FreeTriangleId,
   type FreeTriangleState,
@@ -43,10 +44,23 @@ export function midpoint(index: number): Point {
   return { x: vertex.x / 2, y: vertex.y / 2 };
 }
 
-export function targetTPoint(state: Pick<FreeState, 'targetT'>, index: number): Point {
+export function createDefaultTargetTPoints(): FreeTargetTPoint[] {
+  return [{ id: 't1', t: DEFAULT_TARGET_T, fixed: false }];
+}
+
+export function targetTPoint(target: Pick<FreeTargetTPoint, 't'>, index: number): Point {
   const vertex = HEXAGON_VERTICES[index];
-  const radius = 1 - clamp01(state.targetT);
+  const radius = 1 - clamp01(target.t);
   return { x: vertex.x * radius, y: vertex.y * radius };
+}
+
+export function getTargetTPoint(state: FreeState, targetTId: string | undefined, index: number): Point | null {
+  const target = state.targetTPoints.find((candidate) => candidate.id === targetTId) ?? state.targetTPoints[0];
+  return target ? targetTPoint(target, index) : null;
+}
+
+export function targetTLabel(index: number, targetTId: string | undefined): string {
+  return `P${index}(${targetTId ?? 't1'})`;
 }
 
 export function benzenePoint(index: number): Point {
@@ -85,8 +99,7 @@ export function createDefaultFreeState(): FreeState {
 
   return {
     target: 'S_HALF',
-    targetT: DEFAULT_TARGET_T,
-    targetTFixed: false,
+    targetTPoints: createDefaultTargetTPoints(),
     tool: 'move',
     strictEps: 1e-5,
     selectedTriangleId: 'C',
@@ -169,7 +182,7 @@ export function strictPointInTriangle(point: Point, triangle: FreeTriangleState,
 export function namedPointLabel(ref: FreeNamedPointRef): string {
   if (ref.kind === 'O') return 'O';
   if (ref.kind === 'M') return `M${ref.index ?? 0}`;
-  if (ref.kind === 'P') return `P${ref.index ?? 0}(t)`;
+  if (ref.kind === 'P') return targetTLabel(ref.index ?? 0, ref.targetTId);
   if (ref.kind === 'B') return `B${ref.index ?? 0}`;
   if (ref.kind === 'V') return `V${ref.index ?? 0}`;
   if (ref.kind === 'label') return ref.labelId ?? 'label';
@@ -179,7 +192,7 @@ export function namedPointLabel(ref: FreeNamedPointRef): string {
 export function resolveNamedPoint(state: FreeState, ref: FreeNamedPointRef): Point | null {
   if (ref.kind === 'O') return { x: 0, y: 0 };
   if (ref.kind === 'M') return midpoint(ref.index ?? 0);
-  if (ref.kind === 'P') return targetTPoint(state, ref.index ?? 0);
+  if (ref.kind === 'P') return getTargetTPoint(state, ref.targetTId, ref.index ?? 0);
   if (ref.kind === 'B') return benzenePoint(ref.index ?? 0);
   if (ref.kind === 'V') return HEXAGON_VERTICES[ref.index ?? 0] ?? null;
   if (ref.kind === 'manual') return ref.manualPoint ?? null;
@@ -569,7 +582,9 @@ export function getFreeVd0RawSourceOptions(
   const refs: FreeNamedPointRef[] = [
     { kind: 'V', index: vertexIndex },
     ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'M', index }) as FreeNamedPointRef),
-    ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'P', index }) as FreeNamedPointRef),
+    ...state.targetTPoints.flatMap((target) =>
+      [0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'P', index, targetTId: target.id }) as FreeNamedPointRef),
+    ),
     ...[0, 1, 2, 3, 4, 5].map((index) => ({ kind: 'B', index }) as FreeNamedPointRef),
     ...state.labels.map((label) => ({ kind: 'label', labelId: label.id }) as FreeNamedPointRef),
   ];
@@ -812,7 +827,9 @@ export function validateFreeState(state: FreeState): FreeValidationResult {
         ? [0, 1, 2, 3, 4, 5].map((i) => ({ label: `B${i}`, point: benzenePoint(i) }))
         : [0, 1, 2, 3, 4, 5].map((i) => ({ label: `M${i}`, point: midpoint(i) }))),
       ...(state.target === 'S_T'
-        ? [0, 1, 2, 3, 4, 5].map((i) => ({ label: `P${i}(t)`, point: targetTPoint(state, i) }))
+        ? state.targetTPoints.flatMap((target) =>
+          [0, 1, 2, 3, 4, 5].map((i) => ({ label: targetTLabel(i, target.id), point: targetTPoint(target, i) })),
+        )
         : []),
     ];
     for (const { label, point } of points) {

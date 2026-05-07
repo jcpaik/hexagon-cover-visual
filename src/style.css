@@ -289,11 +289,17 @@ canvas {
 .free-row,
 .free-toolbar,
 .free-triangle-row,
-.free-label-row {
+.free-label-row,
+.free-target-t-row {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.free-target-t-row {
+  border: 1px solid #fed7aa;
+  padding: 4px 6px;
 }
 
 .free-triangle-row,
@@ -329,12 +335,17 @@ canvas {
 .free-row input,
 .free-toolbar input,
 .free-triangle-row select,
-.free-manual-input {
+.free-manual-input,
+.free-target-t-input {
   border: 1px solid #cbd5e1;
   background: #fff;
   color: #0f172a;
   font: inherit;
   padding: 4px 6px;
+}
+
+.free-target-t-input {
+  width: 72px;
 }
 
 .free-button {
