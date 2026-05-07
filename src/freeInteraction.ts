@@ -28,6 +28,7 @@ type DragState =
       kind: 'target-t';
       pointerId: number;
       index: number;
+      targetTId: string;
     }
   | {
       kind: 'move-triangle';
@@ -106,27 +107,32 @@ export function setupFreeInteraction(
     return best?.ref ?? null;
   }
 
-  function targetTHandleUnderPoint(point: Point): number | null {
+  function targetTHandleUnderPoint(point: Point): { index: number; targetTId: string } | null {
     const state = getState();
-    if (state.target !== 'S_T' || state.targetTFixed || state.tool !== 'move') {
+    if (state.target !== 'S_T' || state.tool !== 'move') {
       return null;
     }
     const limit = scaleToMath(TARGET_T_HIT_PX);
-    let best: { index: number; distance: number } | null = null;
-    for (let i = 0; i < 6; i++) {
-      const handle = targetTPoint(state, i);
-      const distance = Math.hypot(point.x - handle.x, point.y - handle.y);
-      if (distance <= limit && (!best || distance < best.distance)) {
-        best = { index: i, distance };
+    let best: { index: number; targetTId: string; distance: number } | null = null;
+    for (const target of state.targetTPoints) {
+      if (target.fixed) continue;
+      for (let i = 0; i < 6; i++) {
+        const handle = targetTPoint(target, i);
+        const distance = Math.hypot(point.x - handle.x, point.y - handle.y);
+        if (distance <= limit && (!best || distance < best.distance)) {
+          best = { index: i, targetTId: target.id, distance };
+        }
       }
     }
-    return best?.index ?? null;
+    return best ? { index: best.index, targetTId: best.targetTId } : null;
   }
 
-  function setTargetTFromPoint(state: FreeState, index: number, point: Point): void {
+  function setTargetTFromPoint(state: FreeState, targetTId: string, index: number, point: Point): void {
+    const target = state.targetTPoints.find((candidate) => candidate.id === targetTId);
+    if (!target || target.fixed) return;
     const vertex = HEXAGON_VERTICES[index];
     const radius = Math.max(0, Math.min(1, point.x * vertex.x + point.y * vertex.y));
-    state.targetT = 1 - radius;
+    target.t = 1 - radius;
   }
 
   function distanceToArc(point: Point, arc: NonNullable<ReturnType<typeof skeletonSegments>[number]['arc']>): number {
@@ -206,10 +212,11 @@ export function setupFreeInteraction(
       dragState = {
         kind: 'target-t',
         pointerId: e.pointerId,
-        index: targetTHandle,
+        index: targetTHandle.index,
+        targetTId: targetTHandle.targetTId,
       };
       canvas.setPointerCapture(e.pointerId);
-      setTargetTFromPoint(state, targetTHandle, point);
+      setTargetTFromPoint(state, targetTHandle.targetTId, targetTHandle.index, point);
       refreshLabels(state);
       render();
       e.preventDefault();
@@ -247,7 +254,7 @@ export function setupFreeInteraction(
     const activeDrag = dragState;
     if (activeDrag.pointerId !== e.pointerId) return;
     if (activeDrag.kind === 'target-t') {
-      setTargetTFromPoint(state, activeDrag.index, point);
+      setTargetTFromPoint(state, activeDrag.targetTId, activeDrag.index, point);
       refreshLabels(state);
       render();
       e.preventDefault();

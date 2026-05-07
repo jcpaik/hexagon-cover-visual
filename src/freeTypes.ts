@@ -11,6 +11,7 @@ export type FreeSegmentKind = 'hex-edge' | 'half-diagonal' | 'triangle-edge' | '
 export interface FreeNamedPointRef {
   kind: NamedPointKind;
   index?: number;
+  targetTId?: string;
   labelId?: string;
   manualPoint?: Point;
 }
@@ -54,8 +55,7 @@ export interface FreeTriangleState {
 
 export interface FreeState {
   target: FreeTarget;
-  targetT: number;
-  targetTFixed: boolean;
+  targetTPoints: FreeTargetTPoint[];
   tool: FreeTool;
   strictEps: number;
   selectedTriangleId: FreeTriangleId;
@@ -64,6 +64,12 @@ export interface FreeState {
   selectedSegments: FreeSegmentRef[];
   status: string;
   sampling?: import('./halfSkeletonFrontier').SamplingStore;
+}
+
+export interface FreeTargetTPoint {
+  id: string;
+  t: number;
+  fixed: boolean;
 }
 
 export interface FreeSegment {

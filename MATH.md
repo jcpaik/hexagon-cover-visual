@@ -285,7 +285,7 @@ The admissible-set description is the local input. The composition inequality is
 ## 12. The variable point target \(S_t\)
 
 Free mode also has a point target interpolating along the half-diagonals.
-For \(0\le t\le 1\), define
+For each \(0\le t\le 1\), define
 \[
 P_i(t):=(1-t)V_i,\qquad i=0,\dots,5.
 \]
@@ -294,15 +294,17 @@ Thus \(P_i(t)\in[O,V_i]\) and
 \operatorname{dist}(O,P_i(t))=1-t.
 \]
 
-The target is
+The app allows a finite list of shared parameters \(t_1,\dots,t_k\).  The
+target is
 \[
-S_t:=S_{1/2}\cup\{P_0(t),\dots,P_5(t)\}.
+S_t:=S_{1/2}\cup\{P_i(t_j): i=0,\dots,5,\ j=1,\dots,k\}.
 \]
 It keeps the whole hexagon boundary and the seven points
 \[
 O,M_0,\dots,M_5
 \]
-from \(S_{1/2}\), and adds one extra point on each half-diagonal.
+from \(S_{1/2}\), and adds the same finite set of extra positions on each
+half-diagonal.
 
 Special values are:
 
@@ -310,10 +312,9 @@ Special values are:
 - \(t=\tfrac12\): \(P_i(t)=M_i\),
 - \(t=1\): \(P_i(t)=O\).
 
-The app treats \(t\) as one shared parameter for all six points.  In Free mode,
-dragging any \(P_i(t)\) changes this shared \(t\), unless the `fix P_i(t)`
-control is enabled.  The fixed control only locks the UI handle; it does not
-change the mathematical target.
+Each \(t_j\) is shared by all six half-diagonals.  In Free mode, dragging any
+\(P_i(t_j)\) changes only that shared \(t_j\), unless that row is locked.  The
+lock only disables the UI handle; it does not change the mathematical target.
 
 ## 13. The Benzene target
 
