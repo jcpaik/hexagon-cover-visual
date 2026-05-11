@@ -15,14 +15,30 @@ This repository contains a Vite + TypeScript web app for exploring unit equilate
 - `src/maps.ts`: admissible-set predicate and one-variable map logic
 - `src/region.ts`: graph canvas and composition plots
 - `src/triangle.ts`: triangle and circle geometry on the left canvas
+- `src/abUnion.ts`: `ab union` region explorer, masks, equality locks, and red-region witness search
 - `src/hexagon.ts`: hexagon boundary and main diagonals
 - `src/coords.ts`: math-to-canvas coordinate transforms
 - `src/geometry.ts`: pure geometric helpers
 - `src/types.ts`: shared types
 - `src/style.css`: layout and control styling
+- `experiments/`: NumPy scripts for professor-facing numerical checks
 
 ## Behavior
 - All geometry is tracked in math coordinates.
 - The left canvas shows the C-triangle or manual `c_i` controls.
 - The right canvas shows `g_c`, pair compositions, or the six-step composition.
 - Strict mode exposes `strictEps` and updates the admissible-set checks and local `c` bounds.
+
+## `ab union` mode
+
+The `ab union` shape mode ports the standalone `hex_region_app.html` region explorer into the normal app interface.
+
+- Drag `p_i` along edge `e_i=[V_i,V_{i+1}]` to edit `b_i`.
+- Click `V_i` to toggle the boundary of `R_i`; click `p_i` to toggle `R_i` and `R_{i+1}`.
+- `show region` controls the shaded covered-region fill.
+- `visible regions` checkboxes control which individual `R_i` fills contribute to the shaded union.
+- `show purple triangle` toggles the sampled enclosing equilateral triangle for the current `theta`.
+- `show red pair > 1` continuously searches the red uncovered region for a sampled pair farther than distance `1` and draws the witness when found.
+- `clip to corner sectors` clips `R_i` to the sector bounded by the adjacent half-diagonals; locally this is `0 <= u <= 1` and `0 <= v <= 1`.
+- The center dropdown can show no center shape, the draggable C-triangle, the draggable C-circle, or the manual `c_i` convex hull.
+- The equality detector includes `same b` checkboxes. Checked points form a same-`b` group: checking a new point moves that point to the existing group value, and only checked points move together while dragging.
