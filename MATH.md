@@ -272,7 +272,57 @@ So the global covering problem is reduced to a family of explicit one-dimensiona
   \]
   where in the proof one only uses the bounds $c_i \le 1-\gamma_i$.
 
-## 11. What remains to prove mathematically
+## 11. `ab union` region explorer
+
+The `ab union` mode studies a related corner-region problem. For each edge
+\[
+e_i=[V_i,V_{i+1}]
+\]
+choose
+\[
+p_i=V_i+b_i(V_{i+1}-V_i), \qquad 0 \le b_i \le 1.
+\]
+At vertex `V_i`, the incoming length is
+\[
+a_i=1-b_{i-1}.
+\]
+Thus the equality case is
+\[
+a_i+b_i=1 \iff b_i=b_{i-1}.
+\]
+
+The local coordinates at `V_i` use the two boundary directions toward `V_{i+1}` and `V_{i-1}`. In those coordinates a sampled point has coordinates `(u,v)` with `u,v >= 0`, and the metric is
+\[
+\|(u,v)\|^2=u^2+v^2-uv.
+\]
+The displayed region `R_i` is computed from the local membership predicate for all unit equilateral triangles containing
+\[
+V_i,\quad p_{i-1},\quad p_i
+\]
+inside the local `120^\circ` cone. The table value
+\[
+d_i=\sqrt{a_i^2+a_i b_i+b_i^2}
+\]
+is the distance between the adjacent edge points `p_{i-1}` and `p_i`; if `d_i>1`, the local required set cannot fit inside a unit equilateral triangle.
+
+The uncovered red region is
+\[
+U=H\setminus \bigcup_i R_i.
+\]
+For a normal angle `theta`, the purple triangle uses the sampled support values of `U` in the three equilateral normal directions and displays the sampled side length
+\[
+L(\theta)=\frac{2}{\sqrt3}\sum_{k=0}^2 h_k(\theta).
+\]
+The optimize button samples `theta` in `[0,2\pi/3)` to estimate `L_*`.
+
+Optional UI modifiers:
+
+- Individual region visibility affects only the displayed covered fill.
+- `clip to corner sectors` clips each `R_i` by the adjacent half-diagonal sector; locally this is `0 <= u <= 1` and `0 <= v <= 1`.
+- The red-pair search checks sampled points of `U` for a witness pair with Euclidean distance greater than `1`.
+- Equality-detector `same b` locks are UI constraints on the selected `b_i` values; they are not additional geometry.
+
+## 12. What remains to prove mathematically
 
 To finish the contradiction argument, one still needs a rigorous statement of the form:
 
@@ -282,7 +332,7 @@ To finish the contradiction argument, one still needs a rigorous statement of th
 
 The admissible-set description is the local input. The composition inequality is the global output. The non-coverability statement follows once those two pieces are connected without exception.
 
-## 12. The variable point target \(S_t\)
+## 13. The variable point target \(S_t\)
 
 Free mode also has a point target interpolating along the half-diagonals.
 For each \(0\le t\le 1\), define
@@ -316,7 +366,7 @@ Each \(t_j\) is shared by all six half-diagonals.  In Free mode, dragging any
 \(P_i(t_j)\) changes only that shared \(t_j\), unless that row is locked.  The
 lock only disables the UI handle; it does not change the mathematical target.
 
-## 13. The Benzene target
+## 14. The Benzene target
 
 Free mode also has a target called **Benzene**.  It adds one fixed point in
 each center subtriangle
@@ -339,7 +389,7 @@ Equivalently, it is the full skeleton together with these six interior
 centroid points.  The \(B_i\) are fixed points; there is no additional
 parameter or drag interaction.
 
-## 14. The lotus target
+## 15. The lotus target
 
 There is another 1-dimensional target set used by the app, called **lotus**.
 Let

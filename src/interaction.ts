@@ -162,7 +162,7 @@ export function setupInteraction(
 
     const shapeMode = getShapeMode();
 
-    if (shapeMode === 'local-c' || shapeMode === 'free') {
+    if (shapeMode === 'local-c' || shapeMode === 'free' || shapeMode === 'ab-union') {
       return { kind: 'none' };
     }
 
@@ -260,7 +260,7 @@ export function setupInteraction(
     const halfDiagonalIndex = getHalfDiagonalHoverIndex(mouse, pointerType);
     const hit = hitTest(mouse, pointerType);
     const shapeMode = getShapeMode();
-    if (shapeMode === 'free') {
+    if (shapeMode === 'free' || shapeMode === 'ab-union') {
       updateCursor(mouse, pointerType);
       return;
     }
@@ -343,6 +343,9 @@ export function setupInteraction(
     const pointerType =
       activePointerId === e.pointerId ? activePointerType : (e.pointerType || 'mouse');
     const mouse = getPointerMath(e);
+    if (getShapeMode() === 'ab-union') {
+      return;
+    }
     onHalfDiagonalHover?.(getHalfDiagonalHoverIndex(mouse, pointerType));
 
     if (interaction.kind === 'idle') {

@@ -85,6 +85,19 @@ import {
   type VCaseSummary,
   type VSample,
 } from './halfSkeletonFrontier';
+import {
+  createDefaultAbUnionState,
+  optimizeAbUnionTheta,
+  renderAbUnion,
+  runAbUnionRandomSearch,
+  setAbUnionPreset,
+  setAbUnionEqualityLock,
+  setupAbUnionInteraction,
+  type AbUnionCenterMode,
+  type AbUnionPreset,
+  type AbUnionQuality,
+  type AbUnionRenderResult,
+} from './abUnion';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -132,6 +145,8 @@ const freeStateJson = document.getElementById('free-state-json') as HTMLTextArea
 const freeStateStatus = document.getElementById('free-state-status') as HTMLDivElement;
 const freeStateCopyButton = document.getElementById('free-state-copy') as HTMLButtonElement;
 const freeStateLoadButton = document.getElementById('free-state-load') as HTMLButtonElement;
+const abUnionPanel = document.getElementById('ab-union-panel') as HTMLDivElement;
+const abUnionControls = document.getElementById('ab-union-controls') as HTMLDivElement;
 
 const triangleState: TriangleState = {
   position: { x: 0, y: 0 },
@@ -161,6 +176,7 @@ let sampleModeSavedTriangleStates: Partial<Record<FreeTriangleId, { hidden: bool
 let currentV0Sample: VSample | RejectedSample | null = null;
 let currentCSample: CSample | RejectedSample | null = null;
 let showAllSamplePoints = false;
+let abUnionState = createDefaultAbUnionState();
 
 interface ControllerSnapshot {
   version: 3;
@@ -484,7 +500,7 @@ function isPoint(value: unknown): value is Point {
 }
 
 function isShapeMode(value: unknown): value is ShapeMode {
-  return value === 'triangle' || value === 'local-c' || value === 'circle' || value === 'free';
+  return value === 'triangle' || value === 'local-c' || value === 'circle' || value === 'free' || value === 'ab-union';
 }
 
 function isGraphMode(value: unknown): value is GraphMode {
@@ -1941,6 +1957,155 @@ function renderFreePanel(validation: FreeValidationResult): void {
   freeStateJson.value = formatFreeSnapshot();
 }
 
+function formatAbUnionDegrees(radians: number): string {
+  return `${(radians * 180 / Math.PI).toFixed(1)} deg`;
+}
+
+function formatAbUnionB(values: number[]): string {
+  return `(${values.map((value) => value.toFixed(4)).join(', ')})`;
+}
+
+function abUnionCenterLabel(mode: AbUnionCenterMode): string {
+  if (mode === 'none') return 'none';
+  if (mode === 'circle') return 'circle';
+  if (mode === 'local-c') return 'manual c_i hull';
+  return 'triangle';
+}
+
+function abUnionResultClass(value: string): string {
+  if (value === 'interesting') return 'is-good';
+  if (value === 'needs refinement') return 'is-warn';
+  return 'is-muted';
+}
+
+function renderAbUnionPanel(result: AbUnionRenderResult): void {
+  const thetaDeg = abUnionState.theta * 180 / Math.PI;
+  const lastOptimized = abUnionState.lastOptimized
+    ? `best L*=${abUnionState.lastOptimized.L.toFixed(5)} at ${formatAbUnionDegrees(abUnionState.lastOptimized.theta)}`
+    : 'best L*: not optimized';
+  const equalityWarning = result.minSeparation < 1e-3
+    ? '<div class="ab-union-warning">close to equality; apparent L &lt; 1 may be a near-degenerate artifact</div>'
+    : '';
+  const centerContainsText = abUnionState.centerMode === 'none'
+    ? 'n/a'
+    : result.centerContains ? 'yes' : `no (${result.centerFailures})`;
+  const centerContainsClass = abUnionState.centerMode === 'none'
+    ? ''
+    : result.centerContains ? 'ab-union-ok' : 'ab-union-bad';
+  const farPairText = !abUnionState.showFarPair
+    ? 'off'
+    : result.farPair === null
+      ? 'no red points'
+      : result.farPair.exceedsUnit
+        ? `found d=${result.farPair.distance.toFixed(5)}`
+        : `best d=${result.farPair.distance.toFixed(5)} <= 1`;
+  const farPairClass = result.farPair?.exceedsUnit ? 'ab-union-bad' : '';
+  const equalityRowsHtml = result.equalityRows.map((row) => `
+    <tr class="${row.equality ? 'ab-union-equality-row' : ''}">
+      <td><input type="checkbox" title="include p${row.index} in the same-b group" data-ab-equality-lock="${row.index}"${row.locked ? ' checked' : ''}/></td>
+      <td>${row.index}</td>
+      <td>${row.previousB.toFixed(4)}</td>
+      <td>${row.currentB.toFixed(4)}</td>
+      <td>${row.sum.toFixed(4)}</td>
+      <td>${row.equality ? 'yes' : 'no'}</td>
+    </tr>
+  `).join('');
+  const regionRowsHtml = result.regionRows.map((row) => `
+    <tr class="${abUnionState.activeRegions[row.index] ? 'ab-union-active-row' : ''}">
+      <td>R${row.index}</td>
+      <td>${row.a.toFixed(4)}</td>
+      <td>${row.b.toFixed(4)}</td>
+      <td>${row.distance.toFixed(4)}</td>
+      <td><span class="ab-union-pill ${row.state}">${row.state}</span></td>
+    </tr>
+  `).join('');
+  const regionVisibilityControls = Array.from({ length: 6 }, (_, index) => `
+    <label><input type="checkbox" data-ab-region-visible="${index}"${abUnionState.regionVisible[index] ? ' checked' : ''}/>R${index}</label>
+  `).join('');
+  const searchRows = abUnionState.searchResults.map((sample, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${sample.L.toFixed(5)}</td>
+      <td>${formatAbUnionDegrees(sample.theta)}</td>
+      <td>${sample.minSeparation.toExponential(2)}</td>
+      <td><span class="ab-union-pill ${abUnionResultClass(sample.classification)}">${escapeHtml(sample.classification)}</span></td>
+    </tr>
+    <tr>
+      <td colspan="5" class="ab-union-b">${escapeHtml(formatAbUnionB(sample.b))}</td>
+    </tr>
+  `).join('');
+
+  abUnionControls.innerHTML = `
+    <div class="ab-union-toolbar">
+      <label><input type="checkbox" data-ab-show-region${abUnionState.showRegion ? ' checked' : ''}/>show region</label>
+      <label><input type="checkbox" data-ab-show-theta${abUnionState.showThetaTriangle ? ' checked' : ''}/>show purple triangle</label>
+      <label><input type="checkbox" data-ab-show-far-pair${abUnionState.showFarPair ? ' checked' : ''}/>show red pair &gt; 1</label>
+      <label><input type="checkbox" data-ab-clip-sectors${abUnionState.clipToCornerSectors ? ' checked' : ''}/>clip to corner sectors</label>
+      <label>center
+        <select data-ab-center-mode>
+          <option value="none"${abUnionState.centerMode === 'none' ? ' selected' : ''}>none</option>
+          <option value="triangle"${abUnionState.centerMode === 'triangle' ? ' selected' : ''}>triangle</option>
+          <option value="circle"${abUnionState.centerMode === 'circle' ? ' selected' : ''}>circle</option>
+          <option value="local-c"${abUnionState.centerMode === 'local-c' ? ' selected' : ''}>manual c_i hull</option>
+        </select>
+      </label>
+      <label>quality
+        <select data-ab-quality>
+          <option value="coarse"${abUnionState.quality === 'coarse' ? ' selected' : ''}>coarse</option>
+          <option value="high"${abUnionState.quality === 'high' ? ' selected' : ''}>high</option>
+          <option value="adaptive"${abUnionState.quality === 'adaptive' ? ' selected' : ''}>adaptive</option>
+        </select>
+      </label>
+    </div>
+    <div class="ab-union-toolbar">
+      <span>visible regions</span>
+      ${regionVisibilityControls}
+    </div>
+    <div class="ab-union-toolbar">
+      <button type="button" class="free-button" data-ab-preset="equality">equality</button>
+      <button type="button" class="free-button" data-ab-preset="near-miss">near miss</button>
+      <button type="button" class="free-button" data-ab-preset="random-strict">random strict</button>
+      <button type="button" class="free-button" data-ab-preset="midpoint">midpoints</button>
+    </div>
+    <div class="ab-union-row">
+      <label for="ab-union-theta">theta = <span>${thetaDeg.toFixed(1)} deg</span></label>
+      <input id="ab-union-theta" type="range" min="0" max="120" step="0.5" value="${thetaDeg.toFixed(1)}" data-ab-theta/>
+    </div>
+    <div class="ab-union-toolbar">
+      <button type="button" class="free-button" data-ab-optimize>optimize theta</button>
+      <button type="button" class="free-button" data-ab-search>random batch</button>
+    </div>
+    <div class="ab-union-readout">
+      <span>L(theta)</span><strong>${result.currentL.toFixed(5)}</strong>
+      <span>${escapeHtml(lastOptimized)}</span><strong>${abUnionState.lastOptimized && abUnionState.lastOptimized.L < 1 ? '&lt; 1' : ''}</strong>
+      <span>uncovered pixels</span><strong>${result.uncoveredCount}</strong>
+      <span>analysis points</span><strong>${result.analysisCount}</strong>
+      <span>active boundaries</span><strong>${escapeHtml(result.activeLabel)}</strong>
+      <span>center shape</span><strong>${escapeHtml(abUnionCenterLabel(abUnionState.centerMode))}</strong>
+      <span>center contains U</span><strong class="${centerContainsClass}">${escapeHtml(centerContainsText)}</strong>
+      <span>red pair search</span><strong class="${farPairClass}">${escapeHtml(farPairText)}</strong>
+      <span>region clip</span><strong>${abUnionState.clipToCornerSectors ? 'corner sectors' : 'off'}</strong>
+      <span>min |b_i-b_{i-1}|</span><strong>${result.minSeparation.toExponential(3)}</strong>
+    </div>
+    ${equalityWarning}
+    <div class="ab-union-section-title">equality detector</div>
+    <table class="ab-union-table">
+      <thead><tr><th>same b</th><th>i</th><th>b prev</th><th>b_i</th><th>a_i+b_i</th><th>eq?</th></tr></thead>
+      <tbody>${equalityRowsHtml}</tbody>
+    </table>
+    <div class="ab-union-section-title">region data</div>
+    <table class="ab-union-table">
+      <thead><tr><th>R_i</th><th>a_i</th><th>b_i</th><th>d_i</th><th>state</th></tr></thead>
+      <tbody>${regionRowsHtml}</tbody>
+    </table>
+    <div class="ab-union-section-title">random search</div>
+    <table class="ab-union-table">
+      <thead><tr><th>#</th><th>L*</th><th>theta</th><th>sep</th><th>class</th></tr></thead>
+      <tbody>${searchRows || '<tr><td colspan="5">no batch run yet</td></tr>'}</tbody>
+    </table>
+  `;
+}
+
 function toggleSelectedHalfDiagonal(index: number): void {
   const existingIndex = selectedHalfDiagonalIndices.indexOf(index);
   if (existingIndex >= 0) {
@@ -1952,7 +2117,7 @@ function toggleSelectedHalfDiagonal(index: number): void {
 }
 
 function isCoverOverlayAvailable(): boolean {
-  return shapeMode !== 'free';
+  return shapeMode !== 'free' && shapeMode !== 'ab-union';
 }
 
 function syncModeButtons(): void {
@@ -1962,6 +2127,8 @@ function syncModeButtons(): void {
     shapeTitle.textContent = 'C-circle';
   } else if (shapeMode === 'free') {
     shapeTitle.textContent = 'Free mode';
+  } else if (shapeMode === 'ab-union') {
+    shapeTitle.textContent = 'ab union';
   } else {
     shapeTitle.textContent = 'c_i controls';
   }
@@ -1972,10 +2139,12 @@ function syncModeButtons(): void {
     button.classList.toggle('is-active', button.dataset.mode === graphMode);
   }
   const freeActive = shapeMode === 'free';
-  sliderRow.hidden = freeActive || graphMode !== 'single';
-  cSlider.disabled = freeActive || graphMode !== 'single';
-  graphPanel.hidden = freeActive;
+  const abUnionActive = shapeMode === 'ab-union';
+  sliderRow.hidden = freeActive || abUnionActive || graphMode !== 'single';
+  cSlider.disabled = freeActive || abUnionActive || graphMode !== 'single';
+  graphPanel.hidden = freeActive || abUnionActive;
   freePanel.hidden = !freeActive;
+  abUnionPanel.hidden = !abUnionActive;
   freeInteractionApi?.setEnabled(freeActive);
   coverOverlayToggle.disabled = !isCoverOverlayAvailable();
   coverOverlayToggle.checked = showCoverOverlay && isCoverOverlayAvailable();
@@ -2056,6 +2225,33 @@ function render(): void {
     coverOverlayStatus.textContent = 'Free mode owns triangle overlay';
     regionRenderer.render();
     renderFreePanel(currentFreeValidation);
+    syncControllerSnapshot();
+    return;
+  }
+
+  if (shapeMode === 'ab-union') {
+    manualLocalCs = manualLocalCs.map((value) => clampToLocalCMax(value, 1));
+
+    ctx.clearRect(0, 0, config.canvasSize, config.canvasSize);
+    drawHexagon(ctx);
+    const abResult = renderAbUnion(ctx, abUnionState, triangleState, manualLocalCs);
+
+    gammaValues.textContent = `b = ${formatTuple(abUnionState.b)}`;
+    localCBounds.textContent = `center = ${abUnionCenterLabel(abUnionState.centerMode)}, quality = ${abUnionState.quality}`;
+    localCValues.textContent = `L(theta) = ${abResult.currentL.toFixed(5)}, min separation = ${abResult.minSeparation.toExponential(3)}`;
+    ceStatus.textContent = 'ab union: CE/g-chain inactive';
+    ceStatus.style.color = '#475569';
+    ceChainStatus.textContent = abUnionState.centerMode === 'none'
+      ? 'center containment inactive'
+      : abResult.centerContains
+        ? 'center containment PASS on sampled U'
+        : `center containment FAIL on ${abResult.centerFailures} sampled points`;
+    ceChainStatus.style.color = abUnionState.centerMode === 'none'
+      ? '#64748b'
+      : abResult.centerContains ? '#047857' : '#b91c1c';
+    coverOverlayStatus.textContent = abUnionState.showRegion ? 'union region visible' : 'union region hidden';
+    coverOverlayStatus.style.color = '#475569';
+    renderAbUnionPanel(abResult);
     syncControllerSnapshot();
     return;
   }
@@ -2504,6 +2700,94 @@ freeStateLoadButton.addEventListener('click', () => {
   }
 });
 
+abUnionControls.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const preset = target.dataset.abPreset as AbUnionPreset | undefined;
+  if (preset) {
+    setAbUnionPreset(abUnionState, preset);
+    render();
+    return;
+  }
+  if (target.dataset.abOptimize !== undefined) {
+    abUnionState.lastOptimized = optimizeAbUnionTheta(abUnionState);
+    abUnionState.theta = abUnionState.lastOptimized.theta;
+    render();
+    return;
+  }
+  if (target.dataset.abSearch !== undefined) {
+    abUnionState.searchResults = runAbUnionRandomSearch();
+    render();
+  }
+});
+
+abUnionControls.addEventListener('input', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  if (target.dataset.abTheta !== undefined) {
+    abUnionState.theta = Math.max(0, Math.min(120, Number(target.value))) * Math.PI / 180;
+    abUnionState.lastOptimized = null;
+    render();
+  }
+});
+
+abUnionControls.addEventListener('change', (event) => {
+  const target = event.target;
+  if (target instanceof HTMLInputElement && target.dataset.abShowRegion !== undefined) {
+    abUnionState.showRegion = target.checked;
+    render();
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.abShowTheta !== undefined) {
+    abUnionState.showThetaTriangle = target.checked;
+    render();
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.abShowFarPair !== undefined) {
+    abUnionState.showFarPair = target.checked;
+    render();
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.abClipSectors !== undefined) {
+    abUnionState.clipToCornerSectors = target.checked;
+    abUnionState.lastOptimized = null;
+    render();
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.abRegionVisible !== undefined) {
+    const index = Number(target.dataset.abRegionVisible);
+    if (Number.isInteger(index) && index >= 0 && index < 6) {
+      abUnionState.regionVisible[index] = target.checked;
+      render();
+    }
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.abEqualityLock !== undefined) {
+    const index = Number(target.dataset.abEqualityLock);
+    if (Number.isInteger(index) && index >= 0 && index < 6) {
+      setAbUnionEqualityLock(abUnionState, index, target.checked);
+      render();
+    }
+    return;
+  }
+  if (target instanceof HTMLSelectElement && target.dataset.abCenterMode !== undefined) {
+    const value = target.value;
+    if (value === 'none' || value === 'triangle' || value === 'circle' || value === 'local-c') {
+      abUnionState.centerMode = value as AbUnionCenterMode;
+      render();
+    }
+    return;
+  }
+  if (target instanceof HTMLSelectElement && target.dataset.abQuality !== undefined) {
+    const value = target.value;
+    if (value === 'coarse' || value === 'high' || value === 'adaptive') {
+      abUnionState.quality = value as AbUnionQuality;
+      abUnionState.lastOptimized = null;
+      render();
+    }
+  }
+});
+
 for (const button of modeButtons) {
   button.addEventListener('click', () => {
     const mode = button.dataset.mode as GraphMode | undefined;
@@ -2549,6 +2833,18 @@ setupInteraction(
     toggleSelectedHalfDiagonal(index);
     render();
   },
+);
+
+setupAbUnionInteraction(
+  canvas,
+  () => shapeMode === 'ab-union',
+  () => abUnionState,
+  triangleState,
+  () => manualLocalCs,
+  (index, value) => {
+    manualLocalCs[index] = clampToLocalCMax(value, 1);
+  },
+  render,
 );
 
 freeInteractionApi = setupFreeInteraction(canvas, () => freeState, render, () => {
