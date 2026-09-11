@@ -17,7 +17,8 @@ This repository contains a Vite + TypeScript web app for exploring unit equilate
 - `src/maps.ts`: admissible-set predicate and one-variable map logic
 - `src/region.ts`: graph canvas and composition plots
 - `src/triangle.ts`: triangle and circle geometry on the left canvas
-- `src/ab-union/`: AB-region geometry, state, rendering, pointer interaction, masks, and witness search
+- `src/ab-union/`: ordinary and restricted AB-region geometry, source sampling, state, rendering, pointer interaction, masks, and witness search
+- `src/strategy3/`: boundary layouts, case-specific source constraints, analytic capacities and witnesses, and witness drawing
 - `src/hexagon.ts`: hexagon boundary and main diagonals
 - `src/coords.ts`: math-to-canvas coordinate transforms
 - `src/geometry.ts`: pure geometric helpers
@@ -101,8 +102,8 @@ Its six-point model is an exploratory predecessor to Strategy 3's completed
 nine-point obstruction: six radial points and three AB-frontier points rule
 out the zero-gap branch with exactly one actual supercritical vertex triangle,
 independently of C and V types. See [Core Case definitions and proof status](CORE_CASE.md).
-The Strategy 3 F graph measures an enclosing triangle's side length; the Area modes'
-$f(a,b)$ measures normalized inside area.
+The Strategy 3 modes measure a selected witness set's enclosing triangle side
+length; the Area modes' $f(a,b)$ measures normalized inside area.
 
 - The mode enforces `a4+b4>1` and `a0+b0,a1+b1,a2+b2<=1`.
 - The control panel has independent checkboxes for forcing `a3+b3=1` and `a5+b5=1`; when unchecked, those rows use `<=1` instead.
@@ -114,16 +115,44 @@ $f(a,b)$ measures normalized inside area.
 
 ## Strategy 3 modes
 
-- `S3 BC (6 points)` explores a selected gap, the center midpoint, and three
-  total radial endpoints.
-- `S3 D (4 points)` explores the supported-rescuer construction.
-- `S3 F (9 points)` replaces the earlier Core `f(a,b)` graph with six radial
-  and three analytic frontier witnesses. It retains the surface, heatmap,
-  sample quality, point selection, and slice controls.
+- `S3 BC (6 points)` uses seven or eight boundary handles to derive two gap
+  endpoints, a center midpoint, and three radial witnesses.
+- `S3 D (4 points)` uses seven or eight boundary handles to derive the origin,
+  two gap endpoints, and one radial witness.
+- `S3 F (9 points)` uses six shared boundary handles. The two reaches at the
+  critical vertex $V_4$ determine six radial and three analytic frontier
+  witnesses; the other handles affect regions and case checks.
 
-BC and D have independent `Parameters` and `V triangles` views. Triangle
-controls reuse Free's selection, translation, and rotation interaction.
-The enclosing triangle is a numerical fit to the selected witnesses;
-condition readouts describe applicability of the paper's construction.
-See [Strategy 3 definitions and controls](STRATEGY3.md) for the precise scopes
-and snapshot migration.
+Drag boundary handles along their edges or edit their numeric positions.
+BC has a required gap on edge 0 and an optional gap on edge 5; D has a required
+edge-5 gap and an optional edge-0 gap. BC and D each retain independent
+seven/eight-dot layouts. Coincident gap endpoints remain separate handles.
+Witness positions are derived and cannot be dragged independently.
+
+The colored AB regions are sampled unions of source triangles satisfying the
+paper's exact endpoint restrictions at gaps, lower demands at shared
+handoffs, and the relevant case filters. Restricting the source triangles is
+different from clipping an ordinary AB region. Analytic capacity bounds
+place the witnesses independently of this shading. A sampled region and a
+numerical enclosing fit do not certify a covering arrangement.
+
+The restricted masks use the shared AB Union rendering pipeline. Region
+checkboxes control drawing only; underlying masks, witness coordinates, and
+case checks stay unchanged. Visibility defaults to all six regions and is
+saved independently for BC, D, and F. Within BC or D, the same visibility
+choices apply to both boundary layouts.
+
+Case-invalid configurations remain editable and report their failed
+conditions. Point checkboxes select witnesses for the hull and numerical
+minimum enclosing triangle; subset fits are labeled separately. The old
+parameter/triangle-source editors and F surface, heatmap, sampling, and slice
+controls have been removed. F retains its optional comparison disk.
+
+Controller snapshots use version 11, storing boundary layouts, region
+visibility, and witness selections. Earlier version-11 snapshots without
+visibility flags load with all regions visible. Versions 8–10 load with a migration notice: old F parameters and
+selections are preserved where representable, while independent BC/D
+coordinates and triangle poses initialize the new boundary presets. Other
+modes retain their saved-state behavior. See [Strategy 3 definitions and
+controls](STRATEGY3.md) for the formulas, source restrictions, and migration
+rules.

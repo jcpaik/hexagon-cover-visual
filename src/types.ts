@@ -21,7 +21,7 @@ export type ShapeMode =
   | 'core-case'
   | 'strategy3-bc'
   | 'strategy3-d'
-  | 'core-graph';
+  | 'strategy3-f';
 
 export type InteractionState =
   | { kind: 'idle' }

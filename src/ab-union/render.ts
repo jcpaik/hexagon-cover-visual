@@ -24,6 +24,7 @@ import {
   shouldUseHexAxisHull,
   SQRT3,
 } from './geometry';
+import { abUnionRegionKey, sampleRestrictedAbSources } from './regions';
 import {
   activeLabel,
   applyAbUnionCoincidenceLocks,
@@ -44,6 +45,7 @@ import type {
   AbUnionMarkPrimitive,
   AbUnionOptimization,
   AbUnionQuality,
+  AbUnionRegionDefinition,
   AbUnionRenderResult,
   AbUnionState,
   HexAxisHull,
@@ -52,7 +54,10 @@ import type {
 const COVER_RGBA = [157, 219, 198, 150] as const;
 const HULL_RGBA = [96, 165, 250, 120] as const;
 const UNCOVERED_RGBA = [220, 38, 38, 145] as const;
-const BOUNDARY_COLORS = ['#344e86', '#8a3ffc', '#0f766e', '#b45309', '#be123c', '#475569'];
+export const AB_UNION_REGION_COLORS = ['#344e86', '#8a3ffc', '#0f766e', '#b45309', '#be123c', '#475569'];
+const REGION_RGB = AB_UNION_REGION_COLORS.map((color) => [
+  parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16),
+]);
 const FAR_PAIR_DIRECTIONS = Array.from({ length: 48 }, (_, index) => {
   const angle = Math.PI * index / 48;
   return { x: Math.cos(angle), y: Math.sin(angle) };
@@ -61,6 +66,23 @@ const FAR_PAIR_DIRECTIONS = Array.from({ length: 48 }, (_, index) => {
 interface AbUnionRenderOptions {
   computeTheta?: boolean;
   localRegionVariant?: AbUnionLocalRegionVariant;
+}
+
+interface AbUnionRegionRenderOptions {
+  sourceRegions?: readonly AbUnionRegionDefinition[];
+  sourceQuality?: 'preview' | 'full';
+  colorByRegion?: boolean;
+  showUncovered?: boolean;
+  drawBoundaries?: boolean;
+  localRegionVariant?: AbUnionLocalRegionVariant;
+}
+
+interface SourceRegionMask {
+  key: string;
+  quality: 'preview' | 'full';
+  coverage: Uint8Array;
+  count: number;
+  status: string;
 }
 
 interface MaskCache {
@@ -77,6 +99,7 @@ interface MaskCache {
   localU: Float32Array[];
   localV: Float32Array[];
   maskBits: Uint8Array;
+  sourceMasks: Array<SourceRegionMask | undefined>;
 }
 
 const cacheBySize = new Map<number, MaskCache>();
@@ -148,6 +171,7 @@ function createMaskCache(sizeInput: number): MaskCache {
     localU,
     localV,
     maskBits: new Uint8Array(pixelIndex.length),
+    sourceMasks: Array(6),
   };
 }
 
@@ -197,6 +221,54 @@ function hasVisibleRegionBits(state: AbUnionState, bits: number): boolean {
   return state.regionVisible.some((visible, index) => visible && (bits & (1 << index)) !== 0);
 }
 
+function prepareSourceMask(
+  cache: MaskCache,
+  definition: AbUnionRegionDefinition,
+  quality: 'preview' | 'full',
+): SourceRegionMask {
+  const key = abUnionRegionKey(definition);
+  const previous = cache.sourceMasks[definition.index];
+  if (previous?.key === key && (previous.quality === 'full' || quality === 'preview')) return previous;
+  const sources = sampleRestrictedAbSources(definition, quality);
+  // Rasterize a source union once; model composition never scans its triangles.
+  cache.offctx.clearRect(0, 0, cache.size, cache.size);
+  cache.offctx.beginPath();
+  for (const triangle of sources.triangles) {
+    triangle.forEach((point, index) => {
+      const x = cache.center + cache.scale * point.x;
+      const y = cache.center - cache.scale * point.y;
+      if (index === 0) cache.offctx.moveTo(x, y);
+      else cache.offctx.lineTo(x, y);
+    });
+    cache.offctx.closePath();
+  }
+  cache.offctx.fillStyle = '#000';
+  cache.offctx.fill();
+  const pixels = cache.offctx.getImageData(0, 0, cache.size, cache.size).data;
+  const coverage = Uint8Array.from(cache.pixelIndex, (pixel) => pixels[pixel * 4 + 3] >= 128 ? 1 : 0);
+  const prepared = { key, quality, coverage, count: sources.triangles.length, status: sources.status };
+  cache.sourceMasks[definition.index] = prepared;
+  return prepared;
+}
+
+function regionPixelColors(state: AbUnionState): Array<readonly [number, number, number, number]> {
+  const highlighting = state.activeRegions.some((active, index) => active && state.regionVisible[index]);
+  return Array.from({ length: 64 }, (_, bits) => {
+    let red = 0, green = 0, blue = 0, alpha = 0;
+    for (let index = 0; index < 6; index++) {
+      if (!state.regionVisible[index] || (bits & (1 << index)) === 0) continue;
+      const sourceAlpha = highlighting ? state.activeRegions[index] ? 0.3 : 0.045 : 0.16;
+      const remaining = alpha * (1 - sourceAlpha);
+      const nextAlpha = sourceAlpha + remaining;
+      red = (REGION_RGB[index][0] * sourceAlpha + red * remaining) / nextAlpha;
+      green = (REGION_RGB[index][1] * sourceAlpha + green * remaining) / nextAlpha;
+      blue = (REGION_RGB[index][2] * sourceAlpha + blue * remaining) / nextAlpha;
+      alpha = nextAlpha;
+    }
+    return [red, green, blue, alpha * 255] as const;
+  });
+}
+
 function writePixel(data: Uint8ClampedArray, q: number, rgba: readonly [number, number, number, number]): void {
   data[q] = rgba[0];
   data[q + 1] = rgba[1];
@@ -208,18 +280,29 @@ function buildMask(
   cache: MaskCache,
   state: AbUnionState,
   variant: AbUnionLocalRegionVariant = 'exact',
+  options: {
+    sourceMasks?: readonly SourceRegionMask[];
+    colorByRegion?: boolean;
+    showUncovered?: boolean;
+  } = {},
 ): number {
   const data = cache.overlay.data;
   data.fill(0);
   const out = Array.from({ length: 6 }, (_, index) => bValue(state, index));
   const inc = Array.from({ length: 6 }, (_, index) => aValue(state, index));
-  const hexAxisHulls = buildHexAxisHulls(cache, state, out, inc, variant);
+  const hexAxisHulls = options.sourceMasks ? [] : buildHexAxisHulls(cache, state, out, inc, variant);
+  const colors = options.colorByRegion ? regionPixelColors(state) : null;
   let uncoveredCount = 0;
 
   for (let k = 0; k < cache.pixelIndex.length; k++) {
     let exactBits = 0;
     let modelBits = 0;
     for (let i = 0; i < 6; i++) {
+      if (options.sourceMasks) {
+        if (options.sourceMasks[i].coverage[k]) exactBits |= 1 << i;
+        modelBits = exactBits;
+        continue;
+      }
       const u = cache.localU[i][k];
       const v = cache.localV[i][k];
       const hull = hexAxisHulls[i];
@@ -239,7 +322,11 @@ function buildMask(
     const q = cache.pixelIndex[k] * 4;
     if (!modelBits) {
       uncoveredCount++;
-      writePixel(data, q, UNCOVERED_RGBA);
+      if (options.showUncovered !== false) writePixel(data, q, UNCOVERED_RGBA);
+    }
+    if (colors) {
+      if (hasVisibleRegionBits(state, modelBits)) writePixel(data, q, colors[modelBits]);
+      continue;
     }
     if (state.useAxisAlignedHull && hasVisibleRegionBits(state, modelBits)) {
       writePixel(data, q, HULL_RGBA);
@@ -590,16 +677,21 @@ function drawRegionBoundary(ctx: CanvasRenderingContext2D, cache: MaskCache, reg
       ctx.lineTo(x + 1, y + 1);
     }
   }
-  ctx.strokeStyle = BOUNDARY_COLORS[regionIndex];
+  ctx.strokeStyle = AB_UNION_REGION_COLORS[regionIndex];
   ctx.globalAlpha = 0.95;
   ctx.lineWidth = 1.15;
   ctx.stroke();
   ctx.restore();
 }
 
-function drawActiveBoundaries(ctx: CanvasRenderingContext2D, cache: MaskCache, state: AbUnionState): void {
+function drawActiveBoundaries(
+  ctx: CanvasRenderingContext2D,
+  cache: MaskCache,
+  state: AbUnionState,
+  visibleOnly = false,
+): void {
   for (let i = 0; i < 6; i++) {
-    if (state.activeRegions[i]) drawRegionBoundary(ctx, cache, i);
+    if (state.activeRegions[i] && (!visibleOnly || state.regionVisible[i])) drawRegionBoundary(ctx, cache, i);
   }
 }
 
@@ -772,6 +864,23 @@ export function optimizeAbUnionTheta(
   return evaluateState(state, thetaSamples, size, state.quality);
 }
 
+export function renderAbUnionRegions(
+  ctx: CanvasRenderingContext2D,
+  state: AbUnionState,
+  options: AbUnionRegionRenderOptions = {},
+): { uncoveredCount: number; regions: Array<{ count: number; status: string }> } {
+  const cache = getMaskCache(config.canvasSize);
+  const sourceMasks = options.sourceRegions?.map((definition) =>
+    prepareSourceMask(cache, definition, options.sourceQuality ?? 'full'),
+  );
+  const uncoveredCount = buildMask(cache, state, options.localRegionVariant ?? 'exact', {
+    sourceMasks, colorByRegion: options.colorByRegion, showUncovered: options.showUncovered,
+  });
+  ctx.drawImage(cache.offscreen, 0, 0, config.canvasSize, config.canvasSize);
+  if (options.drawBoundaries !== false) drawActiveBoundaries(ctx, cache, state, sourceMasks !== undefined);
+  return { uncoveredCount, regions: sourceMasks?.map(({ count, status }) => ({ count, status })) ?? [] };
+}
+
 export function renderAbUnion(
   ctx: CanvasRenderingContext2D,
   state: AbUnionState,
@@ -786,8 +895,7 @@ export function renderAbUnion(
   refreshAbUnionLabels(state, triangleState);
   applyAbUnionCoincidenceLocks(state);
   enforceAbUnionLocks(state);
-  const uncoveredCount = buildMask(cache, state, localRegionVariant);
-  ctx.drawImage(cache.offscreen, 0, 0, config.canvasSize, config.canvasSize);
+  const { uncoveredCount } = renderAbUnionRegions(ctx, state, { localRegionVariant, drawBoundaries: false });
   const computeTheta = options.computeTheta ?? true;
   const shouldOptimizeTheta = computeTheta && state.autoOptimizeTheta && state.thetaOptimizationPending;
   const thetaResult = computeTheta

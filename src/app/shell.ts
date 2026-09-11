@@ -1,6 +1,5 @@
 import { setAbUnionTool } from '../ab-union/state';
 import { setCanvasSize } from '../coords';
-import { NINE_POINT_IDS } from '../strategy3/geometry';
 import {
   getAdmissibleOrderedSource,
   getStrictEps,
@@ -81,7 +80,6 @@ export function createApp() {
   const abUnionPanel = document.getElementById('ab-union-panel') as HTMLDivElement;
   const abUnionPanelTitle = document.getElementById('ab-union-panel-title') as HTMLDivElement;
   const abUnionControls = document.getElementById('ab-union-controls') as HTMLDivElement;
-  const coreGraphPanel = document.getElementById('core-graph-panel') as HTMLDivElement;
   const strategy3Panel = document.getElementById('strategy3-panel') as HTMLDivElement;
   const strategy3Controls = document.getElementById('strategy3-controls') as HTMLDivElement;
   const triangleState: TriangleState = {
@@ -121,7 +119,6 @@ export function createApp() {
     setCanvasSize(mainCanvasSize);
     resizeHiDPICanvas(canvas, ctx, mainCanvasSize);
     regionRenderer.resize(getResponsiveCanvasSize(regionCanvas));
-    core.coreGraphRenderer.resize();
   }
 
   function setControllerStateStatus(text: string, isError = false): void {
@@ -130,9 +127,8 @@ export function createApp() {
   }
 
   function getControllerSnapshot(): ControllerSnapshot {
-    const coreGraph = core.coreGraphRenderer.getState();
     return {
-      version: 10,
+      version: 11,
       shapeMode,
       graphMode,
       startValue: clamp01(startValue),
@@ -159,14 +155,6 @@ export function createApp() {
       coreCaseAlgorithm2Diagonals: core.coreCaseOptions.algorithm2Diagonals,
       coreCaseStrictTwoLineSuperset: core.coreCaseOptions.strictTwoLineSuperset,
       coreCaseRelaxedPPoints: core.coreCaseOptions.relaxedPPoints,
-      coreGraphDisabledPointIds: core.coreGraphDisabledPointIds(),
-      coreGraphSampleRate: core.coreGraphRenderer.getSampleRate(),
-      coreGraphDenseSpecialCurveSampling: core.coreGraphRenderer.getDenseSpecialCurveSampling(),
-      coreGraphSpecialCurveNeighborhoodOnly: core.coreGraphRenderer.getSpecialCurveNeighborhoodOnly(),
-      coreGraphA: coreGraph.a,
-      coreGraphB: coreGraph.b,
-      coreGraphSliceK: coreGraph.k,
-      coreGraphShowDisk: coreGraph.showDisk,
       strategy3: strategy3.getState(),
     };
   }
@@ -209,16 +197,6 @@ export function createApp() {
     core.coreCaseOptions.strictTwoLineSuperset = snapshot.coreCaseStrictTwoLineSuperset;
     core.setCoreCaseRelaxedPPoints(snapshot.coreCaseRelaxedPPoints);
     strategy3.restoreState(snapshot.strategy3);
-    core.coreGraphRenderer.restoreState({
-      a: snapshot.coreGraphA,
-      b: snapshot.coreGraphB,
-      k: snapshot.coreGraphSliceK,
-      sampleRate: snapshot.coreGraphSampleRate,
-      denseSpecialCurveSampling: snapshot.coreGraphDenseSpecialCurveSampling,
-      specialCurveNeighborhoodOnly: snapshot.coreGraphSpecialCurveNeighborhoodOnly,
-      enabledPointIds: NINE_POINT_IDS.filter((id) => !snapshot.coreGraphDisabledPointIds.includes(id)),
-      showDisk: snapshot.coreGraphShowDisk,
-    });
     core.coreCaseTool = 'move';
     setAbUnionTool(core.coreCaseState, 'move');
     ceDirectionSelect.value = base.ceDirection;
@@ -230,8 +208,8 @@ export function createApp() {
     syncModeButtons();
     render();
     syncControllerSnapshot();
-    setControllerStateStatus(originalVersion < 10 && shapeMode === 'core-graph'
-      ? 'Legacy Core graph snapshot loaded in the updated nine-point construction.'
+    setControllerStateStatus(originalVersion < 11
+      ? 'Legacy snapshot loaded. BC/D boundary controls initialized; independent parameters and triangle poses retired.'
       : 'Snapshot loaded.');
   }
 
@@ -254,7 +232,7 @@ export function createApp() {
       shapeMode !== 'core-case' &&
       shapeMode !== 'strategy3-bc' &&
       shapeMode !== 'strategy3-d' &&
-      shapeMode !== 'core-graph';
+      shapeMode !== 'strategy3-f';
   }
 
   function syncPointToolControls(): void {
@@ -267,7 +245,7 @@ export function createApp() {
       shapeMode !== 'core-case' &&
       shapeMode !== 'strategy3-bc' &&
       shapeMode !== 'strategy3-d' &&
-      shapeMode !== 'core-graph';
+      shapeMode !== 'strategy3-f';
     pointToolPanel.hidden = !visible;
     pointToolToggle.classList.toggle('is-active', visible && pointToolActive);
     pointDeleteButton.disabled = !free.pointState.selectedPointSeedId;
@@ -292,8 +270,8 @@ export function createApp() {
       shapeTitle.textContent = 'Area Conj';
     } else if (shapeMode === 'core-case') {
       shapeTitle.textContent = 'Core Case';
-    } else if (shapeMode === 'core-graph') {
-      shapeTitle.textContent = 'S3 F: nine-point Core obstruction';
+    } else if (shapeMode === 'strategy3-f') {
+      shapeTitle.textContent = 'S3 F: nine-point obstruction';
     } else if (shapeMode === 'strategy3-bc') {
       shapeTitle.textContent = 'S3 BC: six-point selected gap';
     } else if (shapeMode === 'strategy3-d') {
@@ -313,16 +291,17 @@ export function createApp() {
     const maxAreaActive = shapeMode === 'max-area';
     const areaConjActive = shapeMode === 'area-conj';
     const coreCaseActive = shapeMode === 'core-case';
-    const coreGraphActive = shapeMode === 'core-graph';
-    const strategy3Active = shapeMode === 'strategy3-bc' || shapeMode === 'strategy3-d';
-    sliderRow.hidden = freeActive || abUnionActive || abHullDebugActive || maxAreaActive || areaConjActive || coreCaseActive || coreGraphActive || strategy3Active || graphMode !== 'single';
-    cSlider.disabled = freeActive || abUnionActive || abHullDebugActive || maxAreaActive || areaConjActive || coreCaseActive || coreGraphActive || strategy3Active || graphMode !== 'single';
-    graphPanel.hidden = freeActive || abUnionActive || abHullDebugActive || maxAreaActive || areaConjActive || coreCaseActive || coreGraphActive || strategy3Active;
+    const strategy3Active = shapeMode === 'strategy3-bc' || shapeMode === 'strategy3-d' || shapeMode === 'strategy3-f';
+    gammaValues.hidden = strategy3Active;
+    localCBounds.hidden = strategy3Active;
+    localCValues.hidden = strategy3Active;
+    sliderRow.hidden = freeActive || abUnionActive || abHullDebugActive || maxAreaActive || areaConjActive || coreCaseActive || strategy3Active || graphMode !== 'single';
+    cSlider.disabled = freeActive || abUnionActive || abHullDebugActive || maxAreaActive || areaConjActive || coreCaseActive || strategy3Active || graphMode !== 'single';
+    graphPanel.hidden = freeActive || abUnionActive || abHullDebugActive || maxAreaActive || areaConjActive || coreCaseActive || strategy3Active;
     freePanel.hidden = !freeActive;
     abUnionPanel.hidden = !abUnionActive && !abHullDebugActive && !maxAreaActive && !areaConjActive && !coreCaseActive;
-    coreGraphPanel.hidden = !coreGraphActive;
     strategy3Panel.hidden = !strategy3Active;
-    strictCheckPanel.hidden = strategy3Active || coreGraphActive;
+    strictCheckPanel.hidden = strategy3Active;
     coverOverlayPanel.hidden = strategy3Active;
     cePanel.hidden = strategy3Active;
     abUnionPanelTitle.textContent = abHullDebugActive
@@ -398,8 +377,7 @@ export function createApp() {
     else if (shapeMode === 'max-area') area.renderMaxAreaFrame();
     else if (shapeMode === 'area-conj') area.renderAreaConjFrame();
     else if (shapeMode === 'core-case') core.renderCoreCaseFrame();
-    else if (shapeMode === 'core-graph') core.renderCoreGraphFrame();
-    else if (shapeMode === 'strategy3-bc' || shapeMode === 'strategy3-d') {
+    else if (shapeMode === 'strategy3-bc' || shapeMode === 'strategy3-d' || shapeMode === 'strategy3-f') {
       gammaValues.textContent = 'Strategy 3 witness construction';
       localCBounds.textContent = '';
       localCValues.textContent = '';

@@ -13,6 +13,7 @@ try {
   const { parseFreeSnapshot, formatFreeSnapshot } = await server.ssrLoadModule('/src/modes/free/snapshot.ts');
   const { createDefaultFreeState, createDefaultTargetTPoints } = await server.ssrLoadModule('/src/freeGeometry.ts');
   const { CORE_CASE_POINT_IDS } = await server.ssrLoadModule('/src/coreCase.ts');
+  const { createDefaultStrategy3State, sanitizeStrategy3State, strategy3EdgeDots } = await server.ssrLoadModule('/src/strategy3/state.ts');
   const controller = {
     version: 8,
     shapeMode: 'triangle',
@@ -29,7 +30,7 @@ try {
   };
   const readController = (overrides = {}) => parseControllerSnapshot(JSON.stringify({ ...controller, ...overrides }));
   const defaultController = readController();
-  assert.equal(defaultController.version, 10);
+  assert.equal(defaultController.version, 11);
   assert.equal(defaultController.strictEpsUpperBound, 0.0001);
   assert.equal(defaultController.strictEps, 0);
   assert.equal(defaultController.ceDirection, 'ccw');
@@ -39,17 +40,23 @@ try {
     'coreCaseStrictTwoLineSuperset', 'coreCaseRelaxedPPoints']) {
     assert.equal(defaultController[key], false, `${key} defaults to false`);
   }
-  assert.equal(defaultController.coreGraphA, 0.55);
-  assert.equal(defaultController.coreGraphB, 0.58);
-  assert.equal(defaultController.coreGraphSliceK, 0);
-  assert.equal(defaultController.coreGraphShowDisk, true);
-  assert.equal(defaultController.strategy3.bc.source, 'parameters');
-  assert.equal(defaultController.strategy3.d.source, 'parameters');
-  assert.notEqual(defaultController.strategy3.bc.triangles, defaultController.strategy3.d.triangles);
-  for (const version of [8, 9, 10]) {
+  const defaultModes = createDefaultStrategy3State();
+  assert.equal(defaultController.strategy3.f.showDisk, true);
+  assert.equal(defaultController.strategy3.bc.layout, 'seven');
+  assert.equal(defaultController.strategy3.d.layout, 'seven');
+  assert.deepEqual(defaultController.strategy3.bc, defaultModes.bc);
+  assert.deepEqual(defaultController.strategy3.d, defaultModes.d);
+  assert.notEqual(defaultModes.bc.layouts.seven, defaultModes.bc.layouts.eight);
+  assert.notEqual(defaultModes.bc.layouts.seven, defaultModes.d.layouts.seven);
+  for (const version of [8, 9, 10, 11]) {
     for (const shapeMode of ['triangle', 'circle', 'local-c', 'free', 'ab-union', 'ab-hull-debug',
-      'max-area', 'area-conj', 'core-case', 'strategy3-bc', 'strategy3-d', 'core-graph']) {
+      'max-area', 'area-conj', 'core-case', 'strategy3-bc', 'strategy3-d',
+      version < 11 ? 'core-graph' : 'strategy3-f']) {
       const snapshot = readController({ version, shapeMode });
+      assert.equal(snapshot.shapeMode, shapeMode === 'core-graph' ? 'strategy3-f' : shapeMode);
+      for (const mode of ['bc', 'd', 'f']) {
+        assert.deepEqual(snapshot.strategy3[mode].regionVisible, Array(6).fill(true));
+      }
       assert.deepEqual(parseControllerSnapshot(formatControllerSnapshot(snapshot)), snapshot);
     }
   }
@@ -79,12 +86,12 @@ try {
   assert.equal(normalized.selectedPointSeedId, null);
   assert.equal(readController({ pointSeeds: seeds, selectedPointSeedId: 'Q1_2' }).selectedPointSeedId, 'Q1_2');
   assert.deepEqual(normalized.coreCaseDisabledPointIds, CORE_CASE_POINT_IDS.slice(1));
-  assert.deepEqual(normalized.coreGraphDisabledPointIds, ['Q-']);
+  assert.deepEqual(normalized.strategy3.f.disabledPointIds, ['Q-']);
   assert.deepEqual(normalized.coreCaseIntervalPointFractions, [0, 1, 0.5, 0.5, 0.5, 0.5]);
   assert.deepEqual(readController({ coreCaseDisabledPointIds: ['I0', 'I0', 'I6', 'invalid'],
     coreCaseEnabledPointIds: [] }).coreCaseDisabledPointIds, ['I0'], 'disabled IDs take precedence over legacy enabled IDs');
   for (const [key, value, message] of [
-    ['version', 7, 'Unsupported snapshot version. Current version is 10.'],
+    ['version', 7, 'Unsupported snapshot version. Current version is 11.'],
     ['shapeMode', 'unknown', 'Invalid shapeMode.'],
     ['graphMode', 'unknown', 'Invalid graphMode.'],
     ['startValue', null, 'Invalid startValue.'],
@@ -102,51 +109,125 @@ try {
     ['ceDirection', 'unknown', 'Invalid ceDirection.'],
     ['ce2SelectedIntervalIndex', 2, 'Invalid ce2SelectedIntervalIndex.'],
     ['ceStartOverrides', [], 'Invalid ceStartOverrides.'],
-    ['coreGraphSampleRate', 'unknown', 'Invalid coreGraphSampleRate.'],
   ]) assert.throws(() => readController({ [key]: value }), { message });
 
-  const modeState = structuredClone(defaultController.strategy3);
-  modeState.bc.source = 'triangles';
-  modeState.bc.parameters = { left: 0.35, right: 0.35, radial: [0.2, 0.4, 0.6] };
-  modeState.bc.triangles[0].center = { x: 0.8, y: 0.07 };
-  modeState.bc.triangles[0].angle = 0.25;
-  modeState.bc.selectedTriangleId = 'V3';
-  modeState.d.parameters = { a: 0.1, epsilon: 0.5, beta: 0.4 };
-  const current = readController({
-    version: 10, shapeMode: 'strategy3-bc', strategy3: modeState,
-    coreGraphA: 0.8, coreGraphB: 0.25, coreGraphSliceK: 1.25, coreGraphShowDisk: false,
-    coreGraphDisabledPointIds: ['Q-', 'D5', 'Q-', 'P3', 'invalid'],
-  });
+  const modeState = createDefaultStrategy3State();
+  modeState.bc.layout = 'eight';
+  modeState.bc.layouts.eight[0] = { left: 0.35, right: 0.35, split: true };
+  modeState.bc.disabledPointIds = ['D2'];
+  modeState.bc.regionVisible[0] = false;
+  modeState.d.regionVisible[1] = false;
+  modeState.f.regionVisible[4] = false;
+  modeState.d.layouts.seven[0] = { left: 0.44, right: 0.44, split: false };
+  modeState.f.edgeDots[3] = { left: 0.2, right: 0.2, split: false };
+  modeState.f.disabledPointIds = ['Q-', 'D5'];
+  modeState.f.showDisk = false;
+  const current = readController({ version: 11, shapeMode: 'strategy3-bc', strategy3: modeState });
   assert.deepEqual(current.strategy3, modeState);
-  assert.deepEqual(current.coreGraphDisabledPointIds, ['Q-', 'D5']);
-  assert.equal(current.coreGraphA, 0.8);
-  assert.equal(current.coreGraphB, 0.25);
-  assert.equal(current.coreGraphSliceK, 1.25);
-  const outsideDomain = parseControllerSnapshot(JSON.stringify({ ...current, coreGraphA: -0.1, coreGraphB: 1.1 }));
-  assert.equal(outsideDomain.coreGraphA, -0.1);
-  assert.equal(outsideDomain.coreGraphB, 1.1);
-  assert.equal(current.coreGraphShowDisk, false);
   assert.deepEqual(parseControllerSnapshot(formatControllerSnapshot(current)), current);
-  for (const version of [8, 9]) {
-    const migrated = readController({ version, shapeMode: 'core-graph',
-      coreGraphDisabledPointIds: ['P3', 'P4', 'P5', 'D0', 'D1', 'D2'],
-      coreGraphStrictTwoLineSuperset: true, coreGraphRelaxedPPoints: true });
-    assert.deepEqual(migrated.coreGraphDisabledPointIds, ['Q-', 'Q0', 'Q+', 'D0', 'D1', 'D2']);
-    assert.ok(!('coreGraphStrictTwoLineSuperset' in migrated));
-    assert.ok(!('coreGraphRelaxedPPoints' in migrated));
+  assert.ok(!Object.keys(current).some((key) => key.startsWith('coreGraph')));
+  assert.throws(() => readController({ version: 11, shapeMode: 'core-graph' }), { message: 'Invalid shapeMode.' });
+  assert.equal(strategy3EdgeDots(modeState, 'bc'), modeState.bc.layouts.eight);
+  assert.equal(strategy3EdgeDots(modeState, 'd'), modeState.d.layouts.seven);
+  assert.equal(strategy3EdgeDots(modeState, 'f'), modeState.f.edgeDots);
+  modeState.bc.layout = 'seven';
+  assert.equal(modeState.bc.regionVisible[0], false, 'region visibility persists across layouts');
+  assert.equal(modeState.d.regionVisible[0], true, 'region visibility is independent across modes');
+  assert.equal(modeState.f.regionVisible[0], true);
+  assert.deepEqual(strategy3EdgeDots(modeState, 'bc'), defaultModes.bc.layouts.seven);
+  modeState.bc.layout = 'eight';
+  assert.equal(strategy3EdgeDots(modeState, 'bc')[0].left, 0.35);
+  const clonedState = sanitizeStrategy3State(modeState);
+  clonedState.bc.layouts.eight[0].left = 0.1;
+  clonedState.bc.regionVisible[0] = true;
+  assert.equal(modeState.bc.regionVisible[0], false, 'visibility sanitization must not alias its input');
+  assert.equal(modeState.bc.layouts.eight[0].left, 0.35, 'sanitization must not alias its input');
+  assert.equal(modeState.bc.layouts.seven[0].left, 0.35, 'layouts must not alias one another');
+  for (const mode of ['bc', 'd']) {
+    for (const layout of ['seven', 'eight']) {
+      assert.equal(defaultModes[mode].layouts[layout].reduce((count, edge) => count + (edge.split ? 2 : 1), 0),
+        layout === 'seven' ? 7 : 8);
+    }
   }
-  for (const [key, value] of [['coreGraphA', null], ['coreGraphB', '0.5'],
-    ['coreGraphSliceK', null], ['coreGraphShowDisk', 'true']]) {
+  assert.equal(defaultModes.f.edgeDots.filter((edge) => !edge.split).length, 6);
+  const earlierV11 = structuredClone(modeState);
+  for (const mode of ['bc', 'd', 'f']) delete earlierV11[mode].regionVisible;
+  const upgradedV11 = readController({ version: 11, strategy3: earlierV11 });
+  assert.equal(upgradedV11.version, 11);
+  for (const mode of ['bc', 'd', 'f']) {
+    assert.deepEqual(upgradedV11.strategy3[mode].regionVisible, Array(6).fill(true));
+    assert.deepEqual(upgradedV11.strategy3[mode].disabledPointIds, modeState[mode].disabledPointIds);
+    for (const invalid of [null, [], Array(5).fill(true), Array(7).fill(true),
+      [true, true, true, true, true, 'false'], [true, true, true, true, true, 0]]) {
+      const malformed = createDefaultStrategy3State();
+      malformed[mode].regionVisible = invalid;
+      assert.throws(() => readController({ version: 11, strategy3: malformed }),
+        { message: 'Invalid Strategy 3 region visibility; expected six booleans.' });
+    }
+  }
+
+  for (const version of [8, 9, 10]) {
+    const migrated = readController({ version, shapeMode: 'core-graph', coreGraphA: 0.8, coreGraphB: 0.25,
+      coreGraphShowDisk: false,
+      coreGraphDisabledPointIds: version < 10 ? ['P3', 'P4', 'P5', 'D0', 'D1', 'D2', 'invalid'] : ['Q-', 'D5', 'Q-', 'P3', 'invalid'],
+      coreGraphSampleRate: 'retired', coreGraphSliceK: 'retired', coreGraphStrictTwoLineSuperset: 'retired' });
+    assert.equal(migrated.shapeMode, 'strategy3-f');
+    assert.deepEqual(migrated.strategy3.f.disabledPointIds,
+      version < 10 ? ['Q-', 'Q0', 'Q+', 'D0', 'D1', 'D2'] : ['Q-', 'D5']);
+    assert.equal(migrated.strategy3.f.showDisk, false);
+    assert.ok(Math.abs(1 - migrated.strategy3.f.edgeDots[3].left - 0.8) < 1e-12);
+    assert.equal(migrated.strategy3.f.edgeDots[4].left, 0.25);
+    for (const [step, edge] of [4, 5, 0, 1, 2, 3].entries()) {
+      assert.ok(Math.abs(migrated.strategy3.f.edgeDots[edge].left - (0.25 - 0.01 * step)) < 1e-12);
+    }
+    assert.ok(!Object.keys(migrated).some((key) => key.startsWith('coreGraph')));
+  }
+  const migratedConstruction = readController({ version: 10, strategy3: {
+    bc: { source: 'triangles', parameters: { left: 0.1, right: 0.2, radial: [0.3, 0.4, 0.5] }, disabledPointIds: ['G0', 'G0', 'D2'] },
+    d: { source: 'parameters', parameters: { a: 0.1, beta: 0.4, epsilon: 0.5 }, disabledPointIds: ['PT'] },
+  } });
+  assert.deepEqual(migratedConstruction.strategy3.bc.layouts, defaultModes.bc.layouts);
+  assert.deepEqual(migratedConstruction.strategy3.d.layouts, defaultModes.d.layouts);
+  assert.deepEqual(migratedConstruction.strategy3.bc.disabledPointIds, ['G0', 'D2']);
+  assert.deepEqual(migratedConstruction.strategy3.d.disabledPointIds, ['PT']);
+  for (const values of [{ coreGraphA: -0.1, coreGraphB: 1.1 }, { coreGraphA: 1.1 }, { coreGraphB: -0.1 }]) {
+    assert.deepEqual(readController({ version: 10, ...values }).strategy3.f.edgeDots, defaultModes.f.edgeDots);
+  }
+  for (const [key, value] of [['coreGraphA', null], ['coreGraphB', '0.5'], ['coreGraphShowDisk', 'true']]) {
     assert.throws(() => readController({ version: 10, [key]: value }), { message: `Invalid ${key}.` });
   }
-  for (const strategy3 of [null, { bc: { ...modeState.bc, source: 'unknown' } },
-    { d: { ...modeState.d, parameters: { a: null, epsilon: 0.4, beta: 0.5 } } },
-    { bc: { ...modeState.bc, triangles: [] } }]) {
+  // Invalid case inequalities remain editable; only boundary coordinates/topology are structural constraints.
+  const invalidCase = createDefaultStrategy3State();
+  invalidCase.bc.layouts.seven[1] = { left: 1, right: 1, split: false };
+  assert.deepEqual(sanitizeStrategy3State(invalidCase), invalidCase);
+  const malformedStates = [null, { bc: { ...modeState.bc, layout: 'unknown' } },
+    { f: { ...modeState.f, showDisk: 'true' } },
+    { d: { ...modeState.d, disabledPointIds: ['D5'] } }];
+  for (const mutate of [
+    (state) => { state.bc.layouts.seven = []; },
+    (state) => { state.bc.layouts.seven[0].left = null; },
+    (state) => { state.bc.layouts.seven[0].left = -0.1; },
+    (state) => { state.bc.layouts.seven[0].right = 1.1; },
+    (state) => { state.bc.layouts.seven[0].split = false; },
+    (state) => { state.bc.layouts.seven[0].left = 0.9; },
+    (state) => { state.bc.layouts.seven[1].right = 0.8; },
+    (state) => { state.d.layouts.seven[0].split = true; },
+    (state) => { state.d.layouts.eight[5].split = false; },
+    (state) => { state.f.edgeDots[0].split = true; },
+    (state) => { state.f.edgeDots = Array(5).fill(state.f.edgeDots[0]); },
+  ]) {
+    const malformed = createDefaultStrategy3State();
+    mutate(malformed);
+    malformedStates.push(malformed);
+  }
+  for (const strategy3 of malformedStates) {
+    assert.throws(() => readController({ version: 11, strategy3 }));
+  }
+  for (const strategy3 of [null, { bc: null }, { d: [] }]) {
     assert.throws(() => readController({ version: 10, strategy3 }));
   }
   for (const key of ['strictCheckEnabled', 'showCoverOverlay', 'coreCaseAlgorithm2Diagonals',
-    'coreCaseStrictTwoLineSuperset', 'coreCaseRelaxedPPoints', 'coreGraphDenseSpecialCurveSampling',
-    'coreGraphSpecialCurveNeighborhoodOnly', 'coreGraphStrictTwoLineSuperset', 'coreGraphRelaxedPPoints']) {
+    'coreCaseStrictTwoLineSuperset', 'coreCaseRelaxedPPoints']) {
     assert.throws(() => readController({ [key]: 'true' }), { message: `Invalid ${key}.` });
   }
 
@@ -207,7 +288,7 @@ try {
   ]) assert.throws(() => readFree({ [key]: value }), { message: `Invalid free snapshot${suffix}.` });
   assert.throws(() => parseControllerSnapshot('{'), SyntaxError);
   assert.throws(() => parseFreeSnapshot('{'), SyntaxError);
-  console.log('PASS: controller v8–10 and Free v1–8 snapshots, Strategy 3 state, legacy graph migration, normalization, and rejection checks');
+  console.log('PASS: controller v8–11 and Free v1–8 snapshots, Strategy 3 boundary layouts, legacy migration, normalization, and rejection checks');
 } finally {
   await server.close();
 }

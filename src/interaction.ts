@@ -172,7 +172,7 @@ export function setupInteraction(
       shapeMode !== 'core-case' &&
       shapeMode !== 'strategy3-bc' &&
       shapeMode !== 'strategy3-d' &&
-      shapeMode !== 'core-graph';
+      shapeMode !== 'strategy3-f';
   }
 
   function getPointSeedUnderPoint(mouse: Point, pointerType: string): string | null {
@@ -209,7 +209,7 @@ export function setupInteraction(
       shapeMode === 'core-case' ||
       shapeMode === 'strategy3-bc' ||
       shapeMode === 'strategy3-d' ||
-      shapeMode === 'core-graph'
+      shapeMode === 'strategy3-f'
     ) {
       return { kind: 'none' };
     }
@@ -345,7 +345,7 @@ export function setupInteraction(
       shapeMode === 'core-case' ||
       shapeMode === 'strategy3-bc' ||
       shapeMode === 'strategy3-d' ||
-      shapeMode === 'core-graph'
+      shapeMode === 'strategy3-f'
     ) {
       updateCursor(mouse, pointerType);
       return;
@@ -435,7 +435,7 @@ export function setupInteraction(
       getShapeMode() === 'core-case' ||
       getShapeMode() === 'strategy3-bc' ||
       getShapeMode() === 'strategy3-d' ||
-      getShapeMode() === 'core-graph'
+      getShapeMode() === 'strategy3-f'
     ) {
       return;
     }

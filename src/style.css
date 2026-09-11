@@ -78,37 +78,6 @@ canvas {
   display: none;
 }
 
-#core-graph-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-#core-graph-panel[hidden] {
-  display: none;
-}
-
-#core-parameter-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  font: 13px monospace;
-}
-
-#core-parameter-row label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-#core-parameter-row input[type="number"] {
-  width: 86px;
-  padding: 4px 6px;
-  border: 1px solid #cbd5e1;
-  font: inherit;
-}
-
 #strategy3-controls {
   display: flex;
   flex-direction: column;
@@ -142,65 +111,6 @@ canvas {
 #ce-controls[hidden],
 #slider-row[hidden] {
   display: none;
-}
-
-#core-surface-canvas {
-  aspect-ratio: 5 / 3;
-  cursor: grab;
-}
-
-#core-point-controls {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-  font-family: monospace;
-  font-size: 13px;
-}
-
-#core-point-controls label {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-  white-space: nowrap;
-}
-
-#core-sample-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  font-family: monospace;
-  font-size: 14px;
-}
-
-#core-sample-row select {
-  font: inherit;
-}
-
-#core-sample-row label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-#core-heatmap-canvas {
-  aspect-ratio: 1;
-}
-
-#core-slice-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  font-family: monospace;
-  font-size: 14px;
-}
-
-#core-slice-row input[type="range"] {
-  flex: 1;
-  min-width: 180px;
 }
 
 #strict-check-panel {

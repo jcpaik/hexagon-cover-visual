@@ -21,6 +21,16 @@ export interface AbUnionEdgeDots {
   split: boolean;
 }
 
+// Source-family constraints, independent of any construction using the union.
+export interface AbUnionRegionDefinition {
+  index: number;
+  a: number;
+  b: number;
+  restriction: 'ordinary' | 'in' | 'out' | 'both';
+  criticality: 'any' | 'non-supercritical' | 'supercritical';
+  requiredInteriorPoints: readonly Point[];
+}
+
 export interface AbUnionMarkSourceRef {
   kind: AbUnionMarkSourceKind;
   index: number;

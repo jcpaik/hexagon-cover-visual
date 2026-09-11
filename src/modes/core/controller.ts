@@ -1,6 +1,6 @@
 import { setupAbUnionInteraction } from '../../ab-union/interaction';
 import { setAbUnionTool } from '../../ab-union/state';
-import { isCoreGraphSampleRate, sanitizeCoreCasePointIds } from '../../app/controllerSnapshot';
+import { sanitizeCoreCasePointIds } from '../../app/controllerSnapshot';
 import {
   clamp01,
   clampToLocalCMax,
@@ -20,9 +20,6 @@ import {
   type CoreCaseOptions,
   type CoreCaseRenderResult,
 } from '../../coreCase';
-import { createCoreGraphRenderer } from '../../coreGraph';
-import { NINE_POINT_IDS } from '../../strategy3/geometry';
-import { drawWitnessConstruction } from '../../strategy3/render';
 import { drawHexagon, HEXAGON_VERTICES } from '../../hexagon';
 import { createRegionRenderer } from '../../region';
 import type { Point, ShapeMode, TriangleState } from '../../types';
@@ -45,19 +42,6 @@ interface Dependencies {
 }
 
 export function createCoreController(deps: Dependencies) {
-  const coreGraphStatus = document.getElementById('core-graph-status') as HTMLDivElement;
-  const corePointControls = document.getElementById('core-point-controls') as HTMLDivElement;
-  const coreSampleRateSelect = document.getElementById('core-sample-rate-select') as HTMLSelectElement;
-  const coreDenseSpecialCurveToggle = document.getElementById('core-dense-special-curve-toggle') as HTMLInputElement;
-  const coreSpecialNeighborhoodToggle = document.getElementById('core-special-neighborhood-toggle') as HTMLInputElement;
-  const coreAInput = document.getElementById('core-a-input') as HTMLInputElement;
-  const coreBInput = document.getElementById('core-b-input') as HTMLInputElement;
-  const coreDiskToggle = document.getElementById('core-disk-toggle') as HTMLInputElement;
-  const coreSurfaceCanvas = document.getElementById('core-surface-canvas') as HTMLCanvasElement;
-  const coreHeatmapCanvas = document.getElementById('core-heatmap-canvas') as HTMLCanvasElement;
-  const coreSliceSlider = document.getElementById('core-slice-slider') as HTMLInputElement;
-  const coreSliceValueLabel = document.getElementById('core-slice-value') as HTMLSpanElement;
-  const coreGraphRenderer = createCoreGraphRenderer(coreSurfaceCanvas, coreHeatmapCanvas);
   let coreCaseState = createDefaultCoreCaseState();
   let coreCaseOptions: CoreCaseOptions = {
     forceSum3: true,
@@ -70,11 +54,6 @@ export function createCoreController(deps: Dependencies) {
   let coreCaseTool: CoreCaseTool = 'move';
   let coreCaseDisabledPointIds: string[] = [];
   let coreCaseIntervalPointFractions: number[] = Array(6).fill(0.5);
-
-  function coreGraphDisabledPointIds(): string[] {
-    const enabledIds = new Set(coreGraphRenderer.getEnabledPointIds());
-    return NINE_POINT_IDS.filter((id) => !enabledIds.has(id));
-  }
 
   function pruneCoreCaseDisabledPointIds(currentPointIds: readonly string[]): void {
     const currentIds = new Set(currentPointIds);
@@ -268,43 +247,6 @@ export function createCoreController(deps: Dependencies) {
     return `Core Case slice: ${r3}, ${r5}, a4+b4>1, a0+b0,a1+b1,a2+b2<=1; ${model}; ${pModel}`;
   }
 
-  function syncCoreGraphPanel(): void {
-    const range = coreGraphRenderer.getRange();
-    const sliceK = coreGraphRenderer.getSliceK();
-    const sample = coreGraphRenderer.getSelection();
-    const enabledIds = new Set(coreGraphRenderer.getEnabledPointIds());
-    coreSliceSlider.min = range.min.toString();
-    coreSliceSlider.max = range.max.toString();
-    coreSliceSlider.step = ((range.max - range.min) / 1000).toString();
-    coreSliceSlider.value = sliceK.toString();
-    coreSliceValueLabel.textContent = sliceK.toFixed(6);
-    coreSampleRateSelect.value = coreGraphRenderer.getSampleRate();
-    coreDenseSpecialCurveToggle.checked = coreGraphRenderer.getDenseSpecialCurveSampling();
-    coreSpecialNeighborhoodToggle.checked = coreGraphRenderer.getSpecialCurveNeighborhoodOnly();
-    if (document.activeElement !== coreAInput) coreAInput.value = sample.a.toString();
-    if (document.activeElement !== coreBInput) coreBInput.value = sample.b.toString();
-    coreDiskToggle.checked = coreGraphRenderer.getShowDisk();
-    const valueName = enabledIds.size === NINE_POINT_IDS.length ? 'F(a,b)' : 'subset side';
-    coreGraphStatus.textContent = sample.side === null
-      ? `selected a=${sample.a.toFixed(4)}, b=${sample.b.toFixed(4)}: ${sample.status}`
-      : `selected a=${sample.a.toFixed(4)}, b=${sample.b.toFixed(4)}, ${valueName}=${sample.side.toFixed(6)}; ${sample.enabledPointCount}/9 points; c*=${sample.cStar?.toFixed(6)}`;
-    corePointControls.innerHTML = `
-    <table class="ab-union-table">
-      <thead><tr><th>use</th><th>id</th><th>source</th><th>x</th><th>y</th></tr></thead>
-      <tbody>${NINE_POINT_IDS.map((id) => {
-        const item = sample.points.find((point) => point.id === id);
-        return `<tr>
-          <td><input type="checkbox" data-core-graph-point="${escapeHtml(id)}"${enabledIds.has(id) ? ' checked' : ''}/></td>
-          <td>${escapeHtml(id)}</td>
-          <td>${escapeHtml(item?.label ?? '')}</td>
-          <td>${item?.point?.x.toFixed(5) ?? '—'}</td>
-          <td>${item?.point?.y.toFixed(5) ?? '—'}</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table>
-  `;
-  }
-
   function renderCoreCasePanel(result: CoreCaseRenderResult): void {
     const boundaryToolControls = (['move', 'add', 'delete', 'core-point'] as CoreCaseTool[]).map((tool) => `
       <button type="button" class="free-button${coreCaseTool === tool ? ' is-active' : ''}" data-core-case-tool="${tool}">${coreCaseToolText(tool)}</button>
@@ -446,86 +388,7 @@ export function createCoreController(deps: Dependencies) {
     return;
   }
 
-  function renderCoreGraphFrame(): void {
-    const sample = coreGraphRenderer.getSelection();
-    deps.ctx.clearRect(0, 0, config.canvasSize, config.canvasSize);
-    drawHexagon(deps.ctx);
-    drawWitnessConstruction(deps.ctx, sample, { showDisk: coreGraphRenderer.getShowDisk() });
-    deps.gammaValues.textContent = `a=${sample.a.toFixed(6)}, b=${sample.b.toFixed(6)}, a+b-1=${sample.strictGap.toExponential(3)}`;
-    deps.localCBounds.textContent = 'F9 domain: 0<a,b<1, a+b>1, a²+ab+b²<1. Fixed Q−, Q0, Q+ and six radial witnesses.';
-    const valueName = coreGraphRenderer.getEnabledPointIds().length === NINE_POINT_IDS.length ? 'F(a,b)' : 'subset side';
-    deps.localCValues.textContent = sample.side === null
-      ? `${valueName} unavailable: ${sample.status}`
-      : `${valueName} = ${sample.side.toFixed(6)}; c*=${sample.cStar?.toFixed(6)}; radius=${sample.diskRadius?.toFixed(6)}`;
-    deps.ceStatus.textContent = 'Strategy 3 · F9: numerical enclosing triangle';
-    deps.ceStatus.style.color = '#475569';
-    deps.ceChainStatus.textContent = sample.domainStatus;
-    deps.ceChainStatus.style.color = sample.domainOk ? '#047857' : '#b91c1c';
-    deps.coverOverlayStatus.textContent = `F9 overlays: witness hull, circles, enclosing triangle${coreGraphRenderer.getShowDisk() ? ', centered disk' : ''}`;
-    deps.coverOverlayStatus.style.color = '#475569';
-    syncCoreGraphPanel();
-    coreGraphRenderer.render();
-  }
-
   function bindCoreControls(): void {
-    coreSliceSlider.addEventListener('input', () => {
-      coreGraphRenderer.setSliceK(parseFloat(coreSliceSlider.value));
-      coreSliceValueLabel.textContent = coreGraphRenderer.getSliceK().toFixed(6);
-      deps.render();
-    });
-
-    coreSampleRateSelect.addEventListener('change', () => {
-      const requested = coreSampleRateSelect.value;
-      if (!isCoreGraphSampleRate(requested)) {
-        return;
-      }
-      coreGraphRenderer.setSampleRate(requested);
-      deps.render();
-    });
-
-    coreDenseSpecialCurveToggle.addEventListener('change', () => {
-      coreGraphRenderer.setDenseSpecialCurveSampling(coreDenseSpecialCurveToggle.checked);
-      deps.render();
-    });
-
-    coreSpecialNeighborhoodToggle.addEventListener('change', () => {
-      coreGraphRenderer.setSpecialCurveNeighborhoodOnly(coreSpecialNeighborhoodToggle.checked);
-      deps.render();
-    });
-
-    function updateParameters(): void {
-      const a = coreAInput.valueAsNumber;
-      const b = coreBInput.valueAsNumber;
-      if (!Number.isFinite(a) || !Number.isFinite(b)) return;
-      coreGraphRenderer.setSelection(a, b);
-      deps.render();
-    }
-    coreAInput.addEventListener('input', updateParameters);
-    coreBInput.addEventListener('input', updateParameters);
-    coreDiskToggle.addEventListener('change', () => {
-      coreGraphRenderer.setShowDisk(coreDiskToggle.checked);
-      deps.render();
-    });
-
-    corePointControls.addEventListener('change', (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLInputElement) || target.dataset.coreGraphPoint === undefined) {
-        return;
-      }
-      const requested = target.dataset.coreGraphPoint;
-      if (!NINE_POINT_IDS.some((id) => id === requested)) {
-        return;
-      }
-      const enabled = new Set(coreGraphRenderer.getEnabledPointIds());
-      if (target.checked) {
-        enabled.add(requested);
-      } else {
-        enabled.delete(requested);
-      }
-      coreGraphRenderer.setEnabledPointIds(NINE_POINT_IDS.filter((id) => enabled.has(id)));
-      deps.render();
-    });
-
     deps.abUnionControls.addEventListener('click', async (event) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
@@ -602,26 +465,19 @@ export function createCoreController(deps: Dependencies) {
     );
 
     setupCoreCaseIntervalPointInteraction();
-
-    coreGraphRenderer.setOnSelectionChange(() => {
-      deps.render();
-    });
   }
 
   return {
-    get coreGraphRenderer() { return coreGraphRenderer; },
     get coreCaseDisabledPointIds() { return coreCaseDisabledPointIds; },
     set coreCaseDisabledPointIds(value: string[]) { coreCaseDisabledPointIds = value; },
     get coreCaseIntervalPointFractions() { return coreCaseIntervalPointFractions; },
     set coreCaseIntervalPointFractions(value: number[]) { coreCaseIntervalPointFractions = value; },
     get coreCaseOptions() { return coreCaseOptions; },
-    coreGraphDisabledPointIds,
     setCoreCaseRelaxedPPoints,
     get coreCaseTool() { return coreCaseTool; },
     set coreCaseTool(value: CoreCaseTool) { coreCaseTool = value; },
     get coreCaseState() { return coreCaseState; },
     renderCoreCaseFrame,
-    renderCoreGraphFrame,
     bindCoreControls
   };
 }

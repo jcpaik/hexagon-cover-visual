@@ -1,7 +1,7 @@
 # Hexagon Cover Visual
 
 An interactive Vite + TypeScript app for exploring equilateral triangles,
-covering regions, and conjectures on a regular hexagon.
+covering regions, and proved obstruction constructions on a regular hexagon.
 
 ## Run and verify
 
@@ -21,8 +21,10 @@ Use `npm run preview` to inspect the production build. See
 - `src/app/`: shared app wiring, controls, state snapshots, and rendering.
 - `src/modes/`: controllers for base shapes, Free, AB Union, Hull Debug, Area,
   Core, and Strategy 3 modes. Free keeps its panels, drawing, sampling, and snapshot codec separate.
-- `src/strategy3/`: BC/D/F witness geometry, shared drawing, and BC/D state.
-- `src/ab-union/`: AB-region geometry, state, rendering, and interaction.
+- `src/strategy3/`: BC/D/F boundary state, case-specific source constraints, analytic
+  witness geometry, and shared drawing.
+- `src/ab-union/`: ordinary and restricted AB-region geometry, state, rendering,
+  and interaction, shared with Strategy 3.
 - Other `src/` modules: shared geometry, interactions, and numerical models.
 - `scripts/`: AB geometry/state, snapshot compatibility, Cunion, and Strategy 3 verification.
 
@@ -33,7 +35,8 @@ Use `npm run preview` to inspect the production build. See
 - [Free mode](docs/FREEMODE.md)
 - [Core case](docs/CORE_CASE.md)
 - [Strategy 3 constructions](docs/STRATEGY3.md): six-point BC, four-point D,
-  and nine-point F modes.
+  and nine-point F modes driven by movable boundary dots and restricted AB regions,
+  with independent region visibility controls.
 - [Axis-aligned polygon hull](docs/AxisAlignedPolygonHull.md)
 
 ## Research

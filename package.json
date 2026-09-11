@@ -12,13 +12,11 @@
     "verify:ab-union": "node scripts/verify-ab-union.mjs",
     "verify:snapshots": "node scripts/verify-snapshots.mjs",
     "verify:strategy3": "node scripts/verify-strategy3.mjs",
-    "verify": "npm run verify:ab-union && npm run verify:snapshots && npm run verify:cunion && npm run verify:strategy3"
+    "verify:strategy3-boundary": "node scripts/verify-strategy3-boundary.mjs",
+    "verify": "npm run verify:ab-union && npm run verify:snapshots && npm run verify:cunion && npm run verify:strategy3 && npm run verify:strategy3-boundary"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
     "vite": "^7.3.1"
-  },
-  "dependencies": {
-    "three": "^0.185.0"
   }
 }

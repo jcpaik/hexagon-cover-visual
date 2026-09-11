@@ -3,14 +3,13 @@ import type { GraphMode } from '../region';
 import type { CoverChainDirection } from '../cover';
 import { sanitizePointSeeds, type SymmetricPointSeed } from '../symmetricPoints';
 import { CORE_CASE_POINT_IDS, isCoreCasePointId } from '../coreCase';
-import { CORE_GRAPH_SAMPLE_RATES, type CoreGraphSampleRate } from '../coreGraph';
 import { NINE_POINT_IDS } from '../strategy3/geometry';
-import { sanitizeStrategy3State, type Strategy3State } from '../strategy3/state';
+import { createDefaultStrategy3State, sanitizeStrategy3State, type Strategy3State } from '../strategy3/state';
 
 export const DEFAULT_STRICT_EPS_UPPER_BOUND = 0.0001;
 
 export interface ControllerSnapshot {
-  version: 10;
+  version: 11;
   shapeMode: ShapeMode;
   graphMode: GraphMode;
   startValue: number;
@@ -33,32 +32,21 @@ export interface ControllerSnapshot {
   coreCaseAlgorithm2Diagonals: boolean;
   coreCaseStrictTwoLineSuperset: boolean;
   coreCaseRelaxedPPoints: boolean;
-  coreGraphDisabledPointIds: string[];
-  coreGraphSampleRate: CoreGraphSampleRate;
-  coreGraphDenseSpecialCurveSampling: boolean;
-  coreGraphSpecialCurveNeighborhoodOnly: boolean;
-  coreGraphA: number;
-  coreGraphB: number;
-  coreGraphSliceK: number;
-  coreGraphShowDisk: boolean;
   strategy3: Strategy3State;
 }
 
-type RawControllerSnapshot = Omit<Partial<ControllerSnapshot>, 'version' | 'pointSeeds' | 'coreCaseDisabledPointIds'> & {
-  version?: 8 | 9 | 10;
+type RawControllerSnapshot = Omit<Partial<ControllerSnapshot>,
+  'version' | 'shapeMode' | 'pointSeeds' | 'coreCaseDisabledPointIds' | 'strategy3'> & {
+  version?: 8 | 9 | 10 | 11;
+  shapeMode?: ShapeMode | 'core-graph';
   pointSeeds?: unknown;
   coreCaseDisabledPointIds?: unknown;
   coreCaseEnabledPointIds?: unknown;
-  coreCaseIntervalPointFractions?: unknown;
-  coreCaseAlgorithm2Diagonals?: unknown;
-  coreCaseStrictTwoLineSuperset?: unknown;
-  coreCaseRelaxedPPoints?: unknown;
   coreGraphDisabledPointIds?: unknown;
-  coreGraphSampleRate?: unknown;
-  coreGraphDenseSpecialCurveSampling?: unknown;
-  coreGraphSpecialCurveNeighborhoodOnly?: unknown;
-  coreGraphStrictTwoLineSuperset?: unknown;
-  coreGraphRelaxedPPoints?: unknown;
+  coreGraphA?: unknown;
+  coreGraphB?: unknown;
+  coreGraphShowDisk?: unknown;
+  strategy3?: unknown;
 };
 
 export function sanitizeCoreCasePointIds(value: unknown): string[] {
@@ -96,8 +84,46 @@ function sanitizeCoreGraphPointIds(value: unknown, legacy: boolean): string[] {
   return Array.from(new Set(ids));
 }
 
-export function isCoreGraphSampleRate(value: unknown): value is CoreGraphSampleRate {
-  return typeof value === 'string' && CORE_GRAPH_SAMPLE_RATES.includes(value as CoreGraphSampleRate);
+function migrateLegacyStrategy3(parsed: RawControllerSnapshot): Strategy3State {
+  const state = createDefaultStrategy3State();
+  if (parsed.strategy3 !== undefined) {
+    if (!parsed.strategy3 || typeof parsed.strategy3 !== 'object' || Array.isArray(parsed.strategy3)) {
+      throw new Error('Invalid Strategy 3 state.');
+    }
+    const legacy = parsed.strategy3 as Record<string, unknown>;
+    for (const mode of ['bc', 'd'] as const) {
+      if (legacy[mode] === undefined) continue;
+      const construction = legacy[mode];
+      if (!construction || typeof construction !== 'object' || Array.isArray(construction)) {
+        throw new Error('Invalid Strategy 3 construction.');
+      }
+      const disabled = (construction as Record<string, unknown>).disabledPointIds;
+      const pointIds = mode === 'bc' ? ['M0', 'G0', 'G1', 'D2', 'D3', 'D4'] : ['O', 'PT', 'G0', 'G1'];
+      state[mode].disabledPointIds = Array.isArray(disabled)
+        ? Array.from(new Set(disabled.filter((id): id is string => typeof id === 'string' && pointIds.includes(id))))
+        : [];
+    }
+  }
+  for (const key of ['coreGraphA', 'coreGraphB'] as const) {
+    if (key in parsed && (typeof parsed[key] !== 'number' || !Number.isFinite(parsed[key]))) {
+      throw new Error(`Invalid ${key}.`);
+    }
+  }
+  if ('coreGraphShowDisk' in parsed && typeof parsed.coreGraphShowDisk !== 'boolean') {
+    throw new Error('Invalid coreGraphShowDisk.');
+  }
+  const a = typeof parsed.coreGraphA === 'number' ? parsed.coreGraphA : 0.55;
+  const b = typeof parsed.coreGraphB === 'number' ? parsed.coreGraphB : 0.58;
+  if (a >= 0 && a <= 1 && b >= 0 && b <= 1) {
+    const path = [4, 5, 0, 1, 2, 3];
+    for (let step = 0; step < path.length; step++) {
+      const position = step === 5 ? 1 - a : b + (1 - a - b) * step / 5;
+      state.f.edgeDots[path[step]] = { left: position, right: position, split: false };
+    }
+  }
+  state.f.disabledPointIds = sanitizeCoreGraphPointIds(parsed.coreGraphDisabledPointIds, (parsed.version ?? 8) < 10);
+  state.f.showDisk = parsed.coreGraphShowDisk === undefined ? true : parsed.coreGraphShowDisk as boolean;
+  return state;
 }
 
 function sanitizeCoreCaseIntervalPointFractions(value: unknown): number[] {
@@ -168,7 +194,7 @@ function isShapeMode(value: unknown): value is ShapeMode {
     value === 'core-case' ||
     value === 'strategy3-bc' ||
     value === 'strategy3-d' ||
-    value === 'core-graph';
+    value === 'strategy3-f';
 }
 
 function isGraphMode(value: unknown): value is GraphMode {
@@ -186,10 +212,12 @@ export function formatControllerSnapshot(snapshot: ControllerSnapshot): string {
 export function parseControllerSnapshot(raw: string): ControllerSnapshot {
   const parsed = JSON.parse(raw) as RawControllerSnapshot;
 
-  if (parsed.version !== 8 && parsed.version !== 9 && parsed.version !== 10) {
-    throw new Error('Unsupported snapshot version. Current version is 10.');
+  if (parsed.version !== 8 && parsed.version !== 9 && parsed.version !== 10 && parsed.version !== 11) {
+    throw new Error('Unsupported snapshot version. Current version is 11.');
   }
-  if (!isShapeMode(parsed.shapeMode)) {
+  const shapeMode = parsed.version < 11 && parsed.shapeMode === 'core-graph'
+    ? 'strategy3-f' : parsed.shapeMode;
+  if (!isShapeMode(shapeMode)) {
     throw new Error('Invalid shapeMode.');
   }
   if (!isGraphMode(parsed.graphMode)) {
@@ -277,32 +305,6 @@ export function parseControllerSnapshot(raw: string): ControllerSnapshot {
   if ('coreCaseRelaxedPPoints' in parsed && typeof parsed.coreCaseRelaxedPPoints !== 'boolean') {
     throw new Error('Invalid coreCaseRelaxedPPoints.');
   }
-  if (!isCoreGraphSampleRate(parsed.coreGraphSampleRate)) {
-    throw new Error('Invalid coreGraphSampleRate.');
-  }
-  if (typeof parsed.coreGraphDenseSpecialCurveSampling !== 'boolean') {
-    throw new Error('Invalid coreGraphDenseSpecialCurveSampling.');
-  }
-  if (typeof parsed.coreGraphSpecialCurveNeighborhoodOnly !== 'boolean') {
-    throw new Error('Invalid coreGraphSpecialCurveNeighborhoodOnly.');
-  }
-  if (
-    'coreGraphStrictTwoLineSuperset' in parsed &&
-    typeof parsed.coreGraphStrictTwoLineSuperset !== 'boolean'
-  ) {
-    throw new Error('Invalid coreGraphStrictTwoLineSuperset.');
-  }
-  if ('coreGraphRelaxedPPoints' in parsed && typeof parsed.coreGraphRelaxedPPoints !== 'boolean') {
-    throw new Error('Invalid coreGraphRelaxedPPoints.');
-  }
-  for (const key of ['coreGraphA', 'coreGraphB', 'coreGraphSliceK'] as const) {
-    if (key in parsed && (typeof parsed[key] !== 'number' || !Number.isFinite(parsed[key]))) {
-      throw new Error(`Invalid ${key}.`);
-    }
-  }
-  if ('coreGraphShowDisk' in parsed && typeof parsed.coreGraphShowDisk !== 'boolean') {
-    throw new Error('Invalid coreGraphShowDisk.');
-  }
 
   const parsedStrictEpsUpperBound = clampStrictEpsUpperBound(
     parsed.strictEpsUpperBound ?? DEFAULT_STRICT_EPS_UPPER_BOUND,
@@ -319,11 +321,13 @@ export function parseControllerSnapshot(raw: string): ControllerSnapshot {
   const parsedCoreCaseIntervalPointFractions = sanitizeCoreCaseIntervalPointFractions(
     parsed.coreCaseIntervalPointFractions,
   );
-  const parsedCoreGraphDisabledPointIds = sanitizeCoreGraphPointIds(parsed.coreGraphDisabledPointIds, parsed.version < 10);
+  const strategy3 = parsed.version === 11
+    ? sanitizeStrategy3State(parsed.strategy3)
+    : migrateLegacyStrategy3(parsed);
 
   return {
-    version: 10,
-    shapeMode: parsed.shapeMode,
+    version: 11,
+    shapeMode,
     graphMode: parsed.graphMode,
     startValue: clamp01(parsed.startValue),
     singleParameter: clamp01(parsed.singleParameter),
@@ -349,14 +353,6 @@ export function parseControllerSnapshot(raw: string): ControllerSnapshot {
     coreCaseAlgorithm2Diagonals: parsed.coreCaseAlgorithm2Diagonals ?? false,
     coreCaseStrictTwoLineSuperset: parsed.coreCaseStrictTwoLineSuperset ?? false,
     coreCaseRelaxedPPoints: parsed.coreCaseRelaxedPPoints ?? false,
-    coreGraphDisabledPointIds: parsedCoreGraphDisabledPointIds,
-    coreGraphSampleRate: parsed.coreGraphSampleRate,
-    coreGraphDenseSpecialCurveSampling: parsed.coreGraphDenseSpecialCurveSampling,
-    coreGraphSpecialCurveNeighborhoodOnly: parsed.coreGraphSpecialCurveNeighborhoodOnly,
-    coreGraphA: parsed.coreGraphA ?? 0.55,
-    coreGraphB: parsed.coreGraphB ?? 0.58,
-    coreGraphSliceK: parsed.coreGraphSliceK ?? 0,
-    coreGraphShowDisk: parsed.coreGraphShowDisk ?? true,
-    strategy3: sanitizeStrategy3State(parsed.strategy3),
+    strategy3,
   };
 }
