@@ -38,7 +38,7 @@ This repository contains a Vite + TypeScript web app for exploring unit equilate
 ## `ab union` mode
 
 The `ab union` shape mode ports the standalone
-[region explorer](../research/legacy/hex_region_app.html) into the normal app interface.
+[region explorer](../legacy/research/hex_region_app.html) into the normal app interface.
 
 - Use `Move`, `Add`, and `Delete` to edit boundary dots on each edge `e_i=[V_i,V_{i+1}]`.
 - Use `d-mark` and `s-mark` to label intersections between the active C-triangle or C-circle boundary and the fixed skeleton. `D` labels recompute when the geometry changes; `S` labels keep the point created at click time.
@@ -70,9 +70,39 @@ The `ab union` shape mode ports the standalone
 - `export current` appends the current `a`, `b`, polygon vertices, and sampled coverage data to the experiment JSON. Repeated exports stay in the same JSON block until `clear exports`.
 - This mode is exploratory only; it does not change the normal `ab union` mask or hull algorithm.
 
+## `Max Area` and `Area Conj` modes
+
+The area function $f(a,b)$ is the maximum of
+$\operatorname{area}(T\cap H)/(\sqrt3/4)$ over closed unit equilateral
+triangles containing a hexagon vertex and the two required adjacent-edge
+points at distances $a,b$ from it. Thus $f$ measures normalized inside area,
+and $1-f$ measures normalized outside area.
+
+- `Max Area` numerically searches one pair $(a,b)$, draws its best triangle candidate, and reports $f$ and $1-f$.
+- `Area Conj` uses the six boundary rows to search each local area problem and reports $\sum_i f_i$ and $\sum_i(1-f_i)$.
+- Both modes retain coarse/high search quality and optional T3-like restrictions. The row sum controls include $a+b=1$ and $a+b=1+\delta$. Displayed search values are numerical estimates.
+
+The area inequality is proved by Strategy 2 of the paper: for feasible cyclic
+handoffs $(a_i,b_i)=(1-x_{i-1},x_i)$ with $x_i\in(0,1)$ and at least two
+supercritical rows $a_i+b_i>1$,
+$\sum_{i=0}^5 f(a_i,b_i)<99/20<5$. Together with strict handoff selection,
+this rules out a cover of the filled hexagon by seven open unit triangles in
+the zero-gap branch with at least two actual supercritical vertex triangles.
+See the pinned [area package](https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/proof/3XXX_CE0/32XX_Nplus_ge2/3201_area_conjecture_index.md),
+[area-loss interface](https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/proof/2XXX_geometric_lemmas/24XX_area_loss/2400_zero_gap_area_loss_interface.md),
+and [paper proof](https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/arrange/paper_draft/05_area_loss_full.tex).
+The proof uses unconditional area-loss bounds; it does not require the
+historical conjecture about the shape of an area-maximizing triangle.
+
 ## `Core Case` mode
 
 `Core Case` is a diagnostic AB-union slice for the core obstruction case.
+Its six-point model is an exploratory predecessor to Strategy 3's completed
+nine-point obstruction: six radial points and three AB-frontier points rule
+out the zero-gap branch with exactly one actual supercritical vertex triangle,
+independently of C and V types. See [Core Case definitions and proof status](CORE_CASE.md).
+Core `f(a,b)` measures an enclosing triangle's side length; the Area modes'
+$f(a,b)$ measures normalized inside area.
 
 - The mode enforces `a4+b4>1` and `a0+b0,a1+b1,a2+b2<=1`.
 - The control panel has independent checkboxes for forcing `a3+b3=1` and `a5+b5=1`; when unchecked, those rows use `<=1` instead.

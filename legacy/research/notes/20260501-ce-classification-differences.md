@@ -32,7 +32,7 @@ classification.
 
 ## Differences From Current Docs
 
-[MATH.md](../../docs/MATH.md) does not use the names `CE0`, `CE1`, or `CE2`.
+[MATH.md](../../../docs/MATH.md) does not use the names `CE0`, `CE1`, or `CE2`.
 
 Instead, it records the C-triangle by its six radial exit distances:
 

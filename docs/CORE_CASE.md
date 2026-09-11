@@ -8,6 +8,24 @@ $$
 
 It uses the same hexagon and AB-region conventions as `MATH.md`.
 
+## Proof status
+
+The app retains this exploratory six-point model, a predecessor to the
+completed Strategy 3 proof. The proof's zero-gap obstruction rules out a
+cover of the filled hexagon by seven open unit triangles when the six vertex
+triangles cover the perimeter and exactly one actual vertex row is
+supercritical. It applies independently of C and V types and uses nine
+witnesses: six radial points $(1-c_*)V_i$, $i=0,\ldots,5$, and three
+AB-frontier points (one line-line intersection and two selected line-circle
+intersections). See the pinned [paper proof](https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/arrange/paper_draft/06_finite_enclosure_full.tex)
+and [type-independent nine-point theorem](https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/proof/3XXX_CE0/31XX_Nplus1/310X_all_Vd0/3105X_self_contained_direct_Vd0_nine_point/31058_center_independent_direct_nine_point_obstruction.md).
+
+The [July pink-curve regression](../legacy/research/notes/20260706-pink-curve-regression.md)
+is a historical numerical investigation of the relaxed six-point model.
+The completed nine-point proof does not establish that report's
+minimum-curve conjecture. The definitions below describe the app's current
+six-point behavior.
+
 ## Coordinate setup
 
 Let $H$ be the regular unit-radius hexagon with vertices
@@ -209,6 +227,10 @@ c^4-c^2+mc-m^2\le 0.
 $$
 
 ## Core f(a,b)
+
+Here $f(a,b)$ is the numerically optimized enclosing equilateral triangle's
+side length for the enabled core points. It differs from the normalized
+inside-area function $f(a,b)$ used by [the Area modes](APP.md#max-area-and-area-conj-modes).
 
 Core `f(a,b)` uses only the two free parameters
 $$

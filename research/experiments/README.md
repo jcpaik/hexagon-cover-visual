@@ -1,7 +1,7 @@
 # Union-Obstruction Numerical Experiments
 
 This directory contains a small NumPy experiment for the strict-inequality question in
-[the AB-union prompt](../prompts/20260511abUnion.txt).
+[the archived AB-union prompt](../../legacy/research/prompts/20260511abUnion.txt).
 
 The browser app has a matching `ab union` mode for visual inspection. Use that mode to drag
 the `p_i` points, toggle individual `R_i` regions, test the equality locks, clip regions to

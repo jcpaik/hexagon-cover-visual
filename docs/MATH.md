@@ -1,4 +1,4 @@
-# Hexagon Skeleton And The Seven-Triangle Obstruction
+# Hexagon Geometry And Historical Skeleton Models
 
 ## 1. Geometric setup
 
@@ -22,11 +22,17 @@ The **skeleton** is
 \]
 that is, the boundary of the hexagon together with its three main diagonals.
 
-The goal is to prove:
+The current [upstream theorem](https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/proof/0XXX_main/0000_main_theorem.md)
+proves that seven open unit equilateral triangles cannot cover the **filled
+hexagon** $H$. The earlier goal of proving this for the skeleton alone was
+retired after the [skeleton-cover counterexample](../research/counterexample/README.md);
+see the upstream [postmortem](https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/proof/9XXX_failed_ideas/908X_skeleton_cover_counterexample/9080_full_skeleton_noncoverage_postmortem.md).
 
-> Seven open equilateral triangles of side length $1$ cannot cover $\operatorname{Sk}$.
-
-Everything in this note is organized around a contradiction argument: assume such a cover exists, encode the local geometric constraints, and derive an impossible six-step recurrence around the hexagon.
+This note retains the geometry and conventions used by the app. Its
+six-step composition discussion records that historical approach, whose
+proposed global reduction is not a proof of skeleton noncoverage. Current
+proofs use trace length, area loss (Strategy 2), and finite enclosure
+(Strategy 3); see the [paper](https://github.com/dylan0301/hexagon-cover-database/tree/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/arrange).
 
 ## 2. Standard reduction of a hypothetical 7-cover
 
@@ -44,7 +50,7 @@ Thus the hypothetical cover can be organized as
 T_C,\ T_0,\ T_1,\ \dots,\ T_5.
 \]
 
-This labeling is only a bookkeeping device. The contradiction will come from comparing what `T_C` does along the six rays from the center with what each `T_i` can do near the corresponding vertex.
+This labeling is a bookkeeping device. The historical approach compared what `T_C` does along the six rays from the center with what each `T_i` can do near the corresponding vertex.
 
 ## 3. Inner gamma data of the C-triangle
 
@@ -183,12 +189,12 @@ Geometrically, the portion of the diagonal not already covered by the C-triangle
 1 - \gamma_i.
 \]
 
-For the contradiction argument, one does not need to identify the local parameter with this full complementary length. It is enough to choose a local parameter $c_i$ for the $V_i$-triangle such that
+The historical propagation model uses a local parameter $c_i$ for the $V_i$-triangle constrained by
 \[
 c_i \le 1-\gamma_i.
 \]
 
-In other words, the quantity $1-\gamma_i$ is an upper bound on the local admissible slice parameter needed in the propagation argument.
+Thus $1-\gamma_i$ is the upper bound imposed on the local admissible slice parameter in that model.
 
 This is the convention the app displays explicitly:
 
@@ -233,7 +239,7 @@ Hence after one full turn,
 \[
 x_6 = (g_{c_5} \circ g_{c_4} \circ \cdots \circ g_{c_0})(x_0).
 \]
-For the covering argument, the parameters are constrained only by
+In this model, the parameters are constrained by
 \[
 c_i \le 1-\gamma_i, \qquad i=0,\dots,5.
 \]
@@ -243,9 +249,9 @@ x_6 = (g_{c_5} \circ g_{c_4} \circ \cdots \circ g_{c_0})(x_0),
 \]
 with the understanding that each $c_i$ is bounded above by $1-\gamma_i$.
 
-## 9. The contradiction template
+## 9. The historical contradiction template
 
-A seven-triangle covering would force the propagated defect after one full cycle not to exceed the defect we started with on the same edge. In symbols, one needs
+The proposed reduction sought to make a seven-triangle covering force the propagated defect after one full cycle not to exceed the starting defect on the same edge. Its target inequality was
 \[
 x_0 \ge x_6.
 \]
@@ -258,7 +264,9 @@ for every relevant $x \in [0,1]$, every inner-gamma tuple produced by a valid C-
 c_i \le 1-\gamma_i.
 \]
 
-So the global covering problem is reduced to a family of explicit one-dimensional inequalities built from admissible-set slices.
+These explicit one-dimensional inequalities remain available for exploration
+in the app. Their proposed use as a universal reduction of the skeleton
+covering problem is historical.
 
 ## 10. Dictionary between the math and the current app
 
@@ -270,7 +278,7 @@ So the global covering problem is reduced to a family of explicit one-dimensiona
   \[
   x \longmapsto (g_{c_5} \circ \cdots \circ g_{c_0})(x),
   \]
-  where in the proof one only uses the bounds $c_i \le 1-\gamma_i$.
+  where the model uses the bounds $c_i \le 1-\gamma_i$.
 
 ## 11. `ab union` region explorer
 
@@ -339,15 +347,19 @@ Optional UI modifiers:
 - `lock center` freezes the current center geometry controls for the C-triangle, C-circle, or manual `c_i` hull.
 - `same a` and `same b` locks are UI constraints on selected `a_i` and `b_i` values; they are not additional geometry.
 
-## 12. What remains to prove mathematically
+## 12. Retired proof program
 
-To finish the contradiction argument, one still needs a rigorous statement of the form:
+The historical six-step program sought to establish all of the following:
 
 1. every hypothetical 7-cover produces an inner-gamma tuple $\gamma(T_C)$ and hence six local parameters $c_i$ with $c_i \le 1-\gamma_i$;
 2. each $V_i$-triangle yields an admissible triple `(a_i,b_i,c_i)`;
 3. the resulting composition map cannot satisfy the required cyclic inequality.
 
-The admissible-set description is the local input. The composition inequality is the global output. The non-coverability statement follows once those two pieces are connected without exception.
+This list is preserved to explain the app's composition experiments. It is
+not a list of remaining obligations for the proved filled-hexagon theorem:
+the standalone skeleton obstruction was retired, and the current proof has
+a different global assembly. See the [research archive](../legacy/README.md)
+for the historical tasks and their upstream successors.
 
 ## 13. The variable point target \(S_t\)
 

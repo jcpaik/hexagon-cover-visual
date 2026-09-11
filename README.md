@@ -35,13 +35,12 @@ Use `npm run preview` to inspect the production build. See
 
 ## Research
 
-- [Counterexample](research/counterexample/README.md): retained snapshot,
-  verifier, triangle data, and visualization.
+- [Current proof and paper](https://github.com/dylan0301/hexagon-cover-database):
+  the filled-hexagon theorem, including Strategy 2's area proof and Strategy 3's
+  nine-point obstruction developed from the earlier Core research.
+- [Skeleton counterexample](research/counterexample/README.md): retained snapshot,
+  verifier, triangle data, and visualization for the boundary and diagonals.
 - [Numerical experiments](research/experiments/README.md): NumPy probes.
-- [Area conjecture](research/area-conjecture/README.md): current conjecture notes.
-- [Half-skeleton proof targets](research/proofs/half-skeleton/README.md) and
-  [reduction prompts](research/proofs/reductions/).
-- [Prompts](research/prompts/) and [notes](research/notes/): research history and
-  recorded experiments.
-- [Standalone region explorer](research/legacy/hex_region_app.html): the original
-  browser prototype, preserved for reference.
+- [Research archive](legacy/README.md): historical prompts, proof targets, area
+  and Core research, and the original browser prototype, with upstream status
+  and successor references.

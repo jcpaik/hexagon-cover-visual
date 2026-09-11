@@ -22,7 +22,7 @@ ask me questions
 
 we don't have assumption on a_1+b_1=1. only a_1+b_1<=1
 
-similar to other files in research/proofs/reductions, make describing conj0525 md file.
+similar to other files in legacy/research/proofs/reductions, make describing conj0525 md file.
 it cexplicitly contains how the 5 points are chosen, it has to be self contained.
 and write the conjecture that always minimal enclosing triangle side length is >1.
 we have same reduction for a_3+b_3=1 and a_5+b_5=1
