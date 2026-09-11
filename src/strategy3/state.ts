@@ -1,5 +1,5 @@
 import type { AbUnionEdgeDots } from '../ab-union/types';
-import { NINE_POINT_IDS } from './geometry';
+import { NINE_POINT_IDS, type NinePointConstruction } from './geometry';
 
 export type Strategy3Mode = 'bc' | 'd' | 'f';
 export type Strategy3GapLayout = 'seven' | 'eight';
@@ -19,6 +19,7 @@ export interface Strategy3State {
     disabledPointIds: string[];
     regionVisible: boolean[];
     showDisk: boolean;
+    pointConstruction: NinePointConstruction;
   };
 }
 
@@ -53,6 +54,7 @@ export function createDefaultStrategy3State(): Strategy3State {
       disabledPointIds: [],
       regionVisible: Array(6).fill(true),
       showDisk: true,
+      pointConstruction: 'newton',
     },
   };
 }
@@ -139,6 +141,11 @@ export function sanitizeStrategy3State(value: unknown): Strategy3State {
   const raw = object(value, 'state');
   const f = raw.f === undefined ? defaults.f : object(raw.f, 'F construction');
   if (typeof f.showDisk !== 'boolean') throw new Error('Invalid Strategy 3 disk visibility.');
+  // Earlier snapshots predate the selector and plotted the exact frontier.
+  const pointConstruction = f.pointConstruction === undefined ? 'frontier' : f.pointConstruction;
+  if (pointConstruction !== 'frontier' && pointConstruction !== 'newton') {
+    throw new Error('Invalid Strategy 3 point construction.');
+  }
   return {
     bc: sanitizeGapConstruction(raw.bc, defaults.bc, 0, ['M0', 'G0', 'G1', 'D2', 'D3', 'D4']),
     d: sanitizeGapConstruction(raw.d, defaults.d, 5, ['O', 'PT', 'G0', 'G1']),
@@ -147,6 +154,7 @@ export function sanitizeStrategy3State(value: unknown): Strategy3State {
       disabledPointIds: sanitizePointIds(f.disabledPointIds, NINE_POINT_IDS),
       regionVisible: sanitizeRegionVisible(f.regionVisible),
       showDisk: f.showDisk,
+      pointConstruction,
     },
   };
 }

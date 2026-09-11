@@ -1,7 +1,7 @@
 import type { AbUnionEdgeDots, AbUnionRegionDefinition } from '../ab-union/types';
 import { HEXAGON_VERTICES } from '../hexagon';
 import { backwardNeighborCapacity, forwardNeighborCapacity, ownRayCapacity } from '../radialCapacity';
-import { buildBC, buildD, evaluateNinePoint, NINE_POINT_IDS, type NinePointEvaluation, type WitnessCondition, type WitnessEvaluation } from './geometry';
+import { buildBC, buildD, evaluateNinePoint, NINE_POINT_IDS, type NinePointEvaluation, type NinePointConstruction, type WitnessCondition, type WitnessEvaluation } from './geometry';
 
 export interface BoundaryRole extends AbUnionRegionDefinition {
   suppliesMidpoint: boolean;
@@ -26,6 +26,7 @@ export function evaluateStrategy3Boundary(
   mode: 'bc' | 'd' | 'f',
   edgeDots: readonly AbUnionEdgeDots[],
   disabledIds: readonly string[] = [],
+  pointConstruction: NinePointConstruction = 'frontier',
 ): BoundaryEvaluation {
   const roles = edgeDots.map((edge, index): BoundaryRole => {
     const previous = edgeDots[(index + 5) % 6];
@@ -68,7 +69,7 @@ export function evaluateStrategy3Boundary(
     witness.status = `capacity-derived radial bound; four-point inequalities ${witness.domainOk ? 'met' : 'not met'}${witness.points.every((point) => point.enabled) ? '' : '; subset fit uses only selected points'}`;
   } else {
     const { a, b } = roles[4];
-    witness = evaluateNinePoint(a, b, NINE_POINT_IDS.filter((id) => !disabledIds.includes(id)));
+    witness = evaluateNinePoint(a, b, NINE_POINT_IDS.filter((id) => !disabledIds.includes(id)), pointConstruction);
     sourceConditions.push(
       { id: 'critical-demands', group: 'source', label: 'Selected demands at V4 satisfy a4 + b4 > 1', ok: a + b > 1 },
       { id: 'common-pair', group: 'source', label: 'All rows dominate the common pair (1 − b4, 1 − a4)', ok: roles.every((role) => role.a >= 1 - b - 1e-12 && role.b >= 1 - a - 1e-12) },

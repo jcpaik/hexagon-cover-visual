@@ -4,7 +4,7 @@ import type { CoverTriangle } from '../cover';
 import type { Point } from '../types';
 
 interface WitnessConstruction {
-  points: readonly { id: string; label: string; point: Point | null; enabled: boolean }[];
+  points: readonly { id: string; symbol?: string; label: string; point: Point | null; enabled: boolean }[];
   triangle: CoverTriangle | null;
   circles?: readonly { id: string; center: Point }[];
   diskRadius?: number | null;
@@ -91,7 +91,7 @@ export function drawWitnessConstruction(
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = !item.enabled ? '#94a3b8' : supports ? '#1d4ed8' : '#78350f';
-    ctx.fillText(item.id, point.x + 7, point.y - 8);
+    ctx.fillText(item.symbol ?? item.id, point.x + 7, point.y - 8);
   }
   ctx.restore();
 }

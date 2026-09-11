@@ -42,6 +42,8 @@ try {
   }
   const defaultModes = createDefaultStrategy3State();
   assert.equal(defaultController.strategy3.f.showDisk, true);
+  assert.equal(defaultModes.f.pointConstruction, 'newton', 'new F sessions default to Newton');
+  assert.equal(defaultController.strategy3.f.pointConstruction, 'frontier', 'legacy sessions retain the exact frontier');
   assert.equal(defaultController.strategy3.bc.layout, 'seven');
   assert.equal(defaultController.strategy3.d.layout, 'seven');
   assert.deepEqual(defaultController.strategy3.bc, defaultModes.bc);
@@ -124,6 +126,20 @@ try {
   modeState.f.showDisk = false;
   const current = readController({ version: 11, shapeMode: 'strategy3-bc', strategy3: modeState });
   assert.deepEqual(current.strategy3, modeState);
+  for (const construction of ['frontier', 'newton']) {
+    const selected = structuredClone(modeState);
+    selected.f.pointConstruction = construction;
+    const roundTrip = readController({ version: 11, shapeMode: 'strategy3-f', strategy3: selected });
+    assert.deepEqual(parseControllerSnapshot(formatControllerSnapshot(roundTrip)).strategy3, selected, 'construction and selections survive save/load');
+  }
+  const withoutConstruction = structuredClone(modeState);
+  delete withoutConstruction.f.pointConstruction;
+  assert.equal(readController({ version: 11, strategy3: withoutConstruction }).strategy3.f.pointConstruction, 'frontier', 'earlier version-11 snapshots retain their plotted points');
+  for (const invalid of [null, 'unknown', true, 0]) {
+    const malformed = structuredClone(modeState);
+    malformed.f.pointConstruction = invalid;
+    assert.throws(() => readController({ version: 11, strategy3: malformed }), { message: 'Invalid Strategy 3 point construction.' });
+  }
   assert.deepEqual(parseControllerSnapshot(formatControllerSnapshot(current)), current);
   assert.ok(!Object.keys(current).some((key) => key.startsWith('coreGraph')));
   assert.throws(() => readController({ version: 11, shapeMode: 'core-graph' }), { message: 'Invalid shapeMode.' });
@@ -175,6 +191,7 @@ try {
     assert.deepEqual(migrated.strategy3.f.disabledPointIds,
       version < 10 ? ['Q-', 'Q0', 'Q+', 'D0', 'D1', 'D2'] : ['Q-', 'D5']);
     assert.equal(migrated.strategy3.f.showDisk, false);
+    assert.equal(migrated.strategy3.f.pointConstruction, 'frontier');
     assert.ok(Math.abs(1 - migrated.strategy3.f.edgeDots[3].left - 0.8) < 1e-12);
     assert.equal(migrated.strategy3.f.edgeDots[4].left, 0.25);
     for (const [step, edge] of [4, 5, 0, 1, 2, 3].entries()) {

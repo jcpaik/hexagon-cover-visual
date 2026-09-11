@@ -176,14 +176,78 @@ try {
     for (const id of ['Q-', 'Q0', 'Q+']) pointClose(findPoint(subset, id), findPoint(f, id), 'selection does not move witnesses');
     assert.ok(subset.side <= f.side + 1e-7, 'subset fit does not exceed full fit');
   }
+
+  // Independently compute the tangent zero using Cartesian circle distances,
+  // not the production coefficients or its closed first-root formula.
+  const newtonCases = [...fCases, [0.55, 0.58], [0.001, 0.9992], [0.9992, 0.001]];
+  for (let index = 1; index < 40; index++) {
+    const a = index / 40;
+    const lower = 1 - a;
+    const upper = (-a + Math.sqrt(4 - 3 * a * a)) / 2;
+    for (const fraction of [1e-5, 0.1, 0.5, 0.9, 1 - 1e-5]) {
+      newtonCases.push([a, lower + fraction * (upper - lower)]);
+    }
+  }
+  for (const [a, b] of newtonCases) {
+    const outer = g.evaluateNinePoint(a, b);
+    const inner = g.evaluateNinePoint(a, b, undefined, 'newton');
+    assert.equal(inner.pointConstruction, 'newton');
+    assert.equal(inner.status, 'ready', `Newton points are defined at ${a},${b}`);
+    assert.equal(inner.enabledPointCount, 9);
+    assert.deepEqual(inner.points.slice(0, 6), outer.points.slice(0, 6), 'Newton does not alter radial witnesses');
+    assert.deepEqual(inner.points.slice(6).map((point) => point.symbol), ['A', 'B', 'C']);
+    pointClose(findPoint(inner, 'Q0'), findPoint(outer, 'Q0'), 'B is exactly Q0');
+    close(inner.cStar, outer.cStar, 'Newton keeps the common radial envelope');
+    close(inner.diskRadius, outer.diskRadius, 'Newton keeps the comparison disk');
+    const junction = findPoint(outer, 'Q0');
+    for (const [id, circleIndex] of [['Q-', 0], ['Q+', 1]]) {
+      const endpoint = findPoint(outer, id);
+      const center = outer.circles[circleIndex].center;
+      const direction = { x: endpoint.x - junction.x, y: endpoint.y - junction.y };
+      const offset = { x: junction.x - center.x, y: junction.y - center.y };
+      const slope = 2 * (offset.x * direction.x + offset.y * direction.y);
+      const value = offset.x ** 2 + offset.y ** 2 - 1;
+      const t = -value / slope;
+      assert.ok(value > 0 && slope < 0 && t > 0 && t < 1, 'Newton tangent zero is strictly inside the frontier segment');
+      pointClose(findPoint(inner, id), { x: junction.x + t * direction.x, y: junction.y + t * direction.y }, 'exactly ONE Newton step', 2e-9);
+      assert.ok(distance(findPoint(inner, id), center) >= 1 - 1e-10, 'inner point remains outside the adjacent unit circle');
+    }
+    const reflected = g.evaluateNinePoint(b, a, undefined, 'newton');
+    const reflect = (point) => {
+      const projection = point.x * vertices[4].x + point.y * vertices[4].y;
+      return { x: 2 * projection * vertices[4].x - point.x, y: 2 * projection * vertices[4].y - point.y };
+    };
+    pointClose(findPoint(reflected, 'Q+'), reflect(findPoint(inner, 'Q-')), 'reflection swaps A and C', 2e-9);
+    assert.ok(inner.side <= outer.side + 1e-7, 'inner nine-point enclosure cannot exceed the outer one');
+    assert.ok(inner.side >= 1 - 1e-8, 'reference inner sets retain the enclosure obstruction');
+    checkEnclosure(inner);
+  }
+  const inner = g.evaluateNinePoint(0.55, 0.58, undefined, 'newton');
+  const innerSubset = g.evaluateNinePoint(0.55, 0.58, ['Q-', 'Q0', 'Q+'], 'newton');
+  assert.equal(innerSubset.enabledPointCount, 3);
+  assert.deepEqual(innerSubset.points.map((point) => point.point), inner.points.map((point) => point.point), 'toggling points cannot move Newton witnesses');
+  checkEnclosure(innerSubset);
+  assert.ok(innerSubset.side <= inner.side + 1e-7);
+  assert.equal(g.evaluateNinePoint(0.55, 0.58, [], 'newton').triangle, null);
+  assert.deepEqual(g.evaluateNinePoint(0.55, 0.58), g.evaluateNinePoint(0.55, 0.58, undefined, 'frontier'), 'omitted API mode retains the exact frontier');
+  // Canvas symbols must agree with the point table; persistent selection IDs
+  // deliberately remain Q-/Q0/Q+ for backward-compatible saved selections.
+  const { drawWitnessConstruction } = await server.ssrLoadModule('/src/strategy3/render.ts');
+  const symbols = [];
+  const ctx = new Proxy({ fillText: (text) => symbols.push(text) }, { get: (target, key) => target[key] ?? (() => {}) });
+  drawWitnessConstruction(ctx, { points: inner.points, triangle: null }, { showHull: false });
+  assert.deepEqual(symbols, ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'A', 'B', 'C']);
+
   assert.equal(g.evaluateNinePoint(0.64, 0.5, []).triangle, null, 'empty F selection has no fit');
   for (const [a, b] of [[0, 0.8], [1, 0], [0.5, 0.5], [0.6, 0.6], [NaN, 0.5], [Infinity, 0.5]]) {
-    const invalid = g.evaluateNinePoint(a, b);
-    assert.equal(invalid.domainOk, false);
-    assert.equal(invalid.triangle, null);
-    assert.ok(invalid.points.every((point) => point.point === null), 'invalid F domain has no fallback witnesses');
+    for (const construction of ['frontier', 'newton']) {
+      const invalid = g.evaluateNinePoint(a, b, undefined, construction);
+      assert.equal(invalid.domainOk, false);
+      assert.equal(invalid.triangle, null);
+      assert.ok(invalid.points.every((point) => point.point === null), 'invalid F domain has no fallback witnesses');
+    }
   }
-  console.log('Strategy 3 checks passed: BC/D constructions, actual neighboring traces, F9 root identities and enclosures, and 18 unchanged Core Case evaluations.');
+  console.log(`Strategy 3 checks passed: BC/D constructions, actual neighboring traces, F9 roots, ${newtonCases.length} Newton/reflection/segment/enclosure cases, canvas symbols, and 18 unchanged Core Case evaluations.`);
 } finally {
   await server.close();
 }
