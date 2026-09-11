@@ -19,6 +19,8 @@ export type ShapeMode =
   | 'max-area'
   | 'area-conj'
   | 'core-case'
+  | 'strategy3-bc'
+  | 'strategy3-d'
   | 'core-graph';
 
 export type InteractionState =

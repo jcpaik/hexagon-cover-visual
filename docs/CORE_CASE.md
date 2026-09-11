@@ -1,7 +1,7 @@
 # Core Case Six Points
 
-This note defines the six named points used by the app's Core Case and
-Core `f(a,b)` modes:
+This note defines the six named points used by the app's Core Case mode
+and the historical Core `f(a,b)` model:
 $$
 P_3,\quad P_4,\quad P_5,\quad D_0,\quad D_1,\quad D_2.
 $$
@@ -25,6 +25,9 @@ is a historical numerical investigation of the relaxed six-point model.
 The completed nine-point proof does not establish that report's
 minimum-curve conjecture. The definitions below describe the app's current
 six-point behavior.
+
+The graph mode has been replaced by [S3 F (9 points)](STRATEGY3.md#f-nine-point-core).
+Core Case retains the six-point definitions and options documented here.
 
 ## Coordinate setup
 
@@ -189,7 +192,7 @@ In algorithm-2 mode the three diagonal points are instead
 $$
 D_j=(1-c_*(p,q))V_j,\qquad j=0,1,2.
 $$
-In Core f(a,b), algorithm-2 mode is always used with
+In the historical Core f(a,b) model, algorithm-2 mode was always used with
 $$
 p=1-b,\qquad q=1-a.
 $$
@@ -226,7 +229,7 @@ $$
 c^4-c^2+mc-m^2\le 0.
 $$
 
-## Core f(a,b)
+## Historical Core f(a,b)
 
 Here $f(a,b)$ is the numerically optimized enclosing equilateral triangle's
 side length for the enabled core points. It differs from the normalized

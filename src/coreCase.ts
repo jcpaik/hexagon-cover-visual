@@ -2,6 +2,7 @@ import type { Point, TriangleState } from './types';
 import { canvasToMath, config, mathToCanvas, scaleToCanvas } from './coords';
 import { fitTriangle, type CoverTriangle } from './cover';
 import { HEXAGON_VERTICES } from './hexagon';
+import { algorithm2CStar } from './radialCapacity';
 import {
   abUnionAValues,
   abUnionBValues,
@@ -614,34 +615,6 @@ function diagonalRedWitness(
   const red = (point: Point) => isRedPoint(point, aValues, bValues, variant);
   if (!red(pointAt(0))) return null;
   return findBoundaryOnParam(pointAt, red) ?? pointAt(1);
-}
-
-function algorithm2QuarticValue(c: number, p: number): number {
-  return c ** 4 - c ** 2 + p * c - p ** 2;
-}
-
-function algorithm2CStar(p: number, q: number): number {
-  const sum = p + q;
-  const m = Math.min(p, q);
-  const M = Math.max(p, q);
-  const transition = sum ** 4 - sum ** 2 + p * q;
-
-  if (transition >= 0) {
-    const denominator = 1 + Math.sqrt(Math.max(0, 4 * sum ** 2 - 3));
-    return clamp01(2 * M / denominator);
-  }
-
-  let low = clamp(sum, 0, 1);
-  let high = 1;
-  for (let step = 0; step < BINARY_STEPS; step++) {
-    const candidate = (low + high) / 2;
-    if (algorithm2QuarticValue(candidate, m) <= 0) {
-      low = candidate;
-    } else {
-      high = candidate;
-    }
-  }
-  return clamp01((low + high) / 2);
 }
 
 function algorithm2Parameters(state: AbUnionState, aValues: number[], bValues: number[]): { p: number; q: number } {

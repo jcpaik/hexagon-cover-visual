@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "verify:ab-union": "node scripts/verify-ab-union.mjs",
     "verify:snapshots": "node scripts/verify-snapshots.mjs",
-    "verify": "npm run verify:ab-union && npm run verify:snapshots && npm run verify:cunion"
+    "verify:strategy3": "node scripts/verify-strategy3.mjs",
+    "verify": "npm run verify:ab-union && npm run verify:snapshots && npm run verify:cunion && npm run verify:strategy3"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

@@ -12,7 +12,7 @@ This repository contains a Vite + TypeScript web app for exploring unit equilate
 - `index.html`: app shell and canvases
 - `src/main.ts`: app bootstrap
 - `src/app/`: app wiring, controls, state snapshots, rendering
-- `src/modes/`: controllers for base shapes, Free, AB Union, Hull Debug, Area, and Core modes
+- `src/modes/`: controllers for base shapes, Free, AB Union, Hull Debug, Area, Core, and Strategy 3 modes
 - `src/interaction.ts`: pointer interaction state machine
 - `src/maps.ts`: admissible-set predicate and one-variable map logic
 - `src/region.ts`: graph canvas and composition plots
@@ -101,7 +101,7 @@ Its six-point model is an exploratory predecessor to Strategy 3's completed
 nine-point obstruction: six radial points and three AB-frontier points rule
 out the zero-gap branch with exactly one actual supercritical vertex triangle,
 independently of C and V types. See [Core Case definitions and proof status](CORE_CASE.md).
-Core `f(a,b)` measures an enclosing triangle's side length; the Area modes'
+The Strategy 3 F graph measures an enclosing triangle's side length; the Area modes'
 $f(a,b)$ measures normalized inside area.
 
 - The mode enforces `a4+b4>1` and `a0+b0,a1+b1,a2+b2<=1`.
@@ -111,3 +111,19 @@ $f(a,b)$ measures normalized inside area.
 - It can mark the two `R4`/circle intersections and three diagonal red-witness points.
 - The point table has a `use` checkbox for each point. Unchecked points are hidden on the canvas and excluded from the enclosing-triangle fit.
 - If no points are checked, the triangle side is unavailable until at least one point is re-enabled.
+
+## Strategy 3 modes
+
+- `S3 BC (6 points)` explores a selected gap, the center midpoint, and three
+  total radial endpoints.
+- `S3 D (4 points)` explores the supported-rescuer construction.
+- `S3 F (9 points)` replaces the earlier Core `f(a,b)` graph with six radial
+  and three analytic frontier witnesses. It retains the surface, heatmap,
+  sample quality, point selection, and slice controls.
+
+BC and D have independent `Parameters` and `V triangles` views. Triangle
+controls reuse Free's selection, translation, and rotation interaction.
+The enclosing triangle is a numerical fit to the selected witnesses;
+condition readouts describe applicability of the paper's construction.
+See [Strategy 3 definitions and controls](STRATEGY3.md) for the precise scopes
+and snapshot migration.

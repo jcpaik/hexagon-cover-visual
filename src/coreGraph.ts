@@ -1,10 +1,9 @@
 import * as THREE from 'three';
 import {
-  CORE_CASE_POINT_IDS,
-  evaluateCoreCaseGraph,
-  type CoreCaseGraphSample,
-} from './coreCase';
-import type { AbUnionLocalRegionVariant } from './ab-union/types';
+  NINE_POINT_IDS,
+  evaluateNinePoint,
+  type NinePointEvaluation,
+} from './strategy3/geometry';
 
 const BOUNDARY_BAND_WIDTH = 0.12;
 const DOMAIN_EPS = 1e-5;
@@ -13,7 +12,8 @@ const SURFACE_HEIGHT = 1.35;
 const HEATMAP_PADDING = 44;
 const FONT_SIZE = 12;
 const MINIMUM_CURVE_COLOR = '#d946ef';
-const MINIMUM_CURVE_Z_OFFSET = 0.035;
+const TRANSITION_CURVE_COLOR = '#0f766e';
+const CURVE_Z_OFFSET = 0.035;
 const SPECIAL_CURVE_NEIGHBORHOOD_B_WIDTH = 0.03;
 const SPECIAL_CURVE_DENSE_B_OFFSETS = [-0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03];
 
@@ -31,7 +31,7 @@ interface GridSamples {
   s: number[];
 }
 
-type MinimumCurve = Array<GridNode | null>;
+type GraphCurve = Array<GridNode | null>;
 
 const SAMPLE_PROFILES: Record<CoreGraphSampleRate, SampleProfile> = {
   high: { aCount: 128, sCount: 96, boundaryBandCount: 64 },
@@ -50,7 +50,8 @@ interface GridNode {
 interface GridData {
   samples: GridSamples;
   nodes: GridNode[];
-  minimumCurve: MinimumCurve;
+  minimumCurve: GraphCurve;
+  transitionCurve: GraphCurve;
   minSide: number;
   maxSide: number;
 }
@@ -70,7 +71,7 @@ export interface CoreGraphRenderer {
   render(): void;
   resize(): void;
   setSelection(a: number, b: number): void;
-  getSelection(): CoreCaseGraphSample;
+  getSelection(): NinePointEvaluation;
   setSliceK(value: number): void;
   getSliceK(): number;
   getRange(): { min: number; max: number };
@@ -80,13 +81,24 @@ export interface CoreGraphRenderer {
   getDenseSpecialCurveSampling(): boolean;
   setSpecialCurveNeighborhoodOnly(value: boolean): void;
   getSpecialCurveNeighborhoodOnly(): boolean;
-  setStrictTwoLineSuperset(value: boolean): void;
-  getStrictTwoLineSuperset(): boolean;
-  setRelaxedPPoints(value: boolean): void;
-  getRelaxedPPoints(): boolean;
+  setShowDisk(value: boolean): void;
+  getShowDisk(): boolean;
   setEnabledPointIds(ids: readonly string[]): void;
   getEnabledPointIds(): string[];
-  setOnSelectionChange(callback: (sample: CoreCaseGraphSample) => void): void;
+  getState(): CoreGraphState;
+  restoreState(state: CoreGraphState): void;
+  setOnSelectionChange(callback: (sample: NinePointEvaluation) => void): void;
+}
+
+export interface CoreGraphState {
+  a: number;
+  b: number;
+  k: number;
+  sampleRate: CoreGraphSampleRate;
+  denseSpecialCurveSampling: boolean;
+  specialCurveNeighborhoodOnly: boolean;
+  enabledPointIds: string[];
+  showDisk: boolean;
 }
 
 function clamp01(value: number): number {
@@ -107,7 +119,7 @@ function sameIds(a: readonly string[], b: readonly string[]): boolean {
 
 function normalizeEnabledPointIds(ids: readonly string[]): string[] {
   const requested = new Set(ids);
-  return CORE_CASE_POINT_IDS.filter((id) => requested.has(id));
+  return NINE_POINT_IDS.filter((id) => requested.has(id));
 }
 
 function colorStops(t: number): [number, number, number] {
@@ -166,14 +178,14 @@ function buildSSamples(count: number, boundaryBandCount: number): number[] {
 
 function domainSFromB(a: number, b: number): number | null {
   const bLow = 1 - a + DOMAIN_EPS;
-  const bHigh = upperBoundary(a);
+  const bHigh = upperBoundary(a) - DOMAIN_EPS;
   const width = bHigh - bLow;
   if (width <= 1e-12) return null;
   const s = (b - bLow) / width;
   return s >= 0 && s <= 1 ? s : null;
 }
 
-function buildSamples(sampleRate: CoreGraphSampleRate, denseCurve: MinimumCurve | null = null): GridSamples {
+function buildSamples(sampleRate: CoreGraphSampleRate, denseCurve: GraphCurve | null = null): GridSamples {
   const profile = SAMPLE_PROFILES[sampleRate];
   const s = buildSSamples(profile.sCount, profile.boundaryBandCount);
   if (denseCurve !== null) {
@@ -199,7 +211,7 @@ function upperBoundary(a: number): number {
 
 function sampleDomainNode(a: number, s: number): { a: number; b: number; valid: boolean } {
   const bLow = 1 - a + DOMAIN_EPS;
-  const bHigh = upperBoundary(a);
+  const bHigh = upperBoundary(a) - DOMAIN_EPS;
   if (bLow > bHigh || bHigh < 0 || bLow > 1) {
     return { a, b: clamp01(bHigh), valid: false };
   }
@@ -213,9 +225,7 @@ function sampleDomainNode(a: number, s: number): { a: number; b: number; valid: 
 function buildGrid(
   enabledPointIds: readonly string[],
   sampleRate: CoreGraphSampleRate,
-  variant: AbUnionLocalRegionVariant,
-  relaxedPPoints: boolean,
-  denseCurve: MinimumCurve | null = null,
+  denseCurve: GraphCurve | null = null,
 ): GridData {
   const samples = buildSamples(sampleRate, denseCurve);
   const nodes: GridNode[] = [];
@@ -226,7 +236,7 @@ function buildGrid(
     for (const a of samples.a) {
       const domain = sampleDomainNode(a, s);
       const sample = domain.valid
-        ? evaluateCoreCaseGraph(domain.a, domain.b, enabledPointIds, variant, relaxedPPoints)
+        ? evaluateNinePoint(domain.a, domain.b, enabledPointIds)
         : null;
       const side = finiteSide(sample?.side ?? null) ? sample?.side ?? null : null;
       if (side !== null) {
@@ -250,6 +260,9 @@ function buildGrid(
     samples,
     nodes,
     minimumCurve: buildMinimumCurve(nodes, samples),
+    transitionCurve: buildTransitionCurve(samples.a, enabledPointIds).map((node) => node === null ? null : {
+      ...node, t: node.side === null ? 0 : (node.side - minSide) / (maxSide - minSide),
+    }),
     minSide,
     maxSide,
   };
@@ -259,21 +272,16 @@ function gridIndex(i: number, j: number, samples: GridSamples): number {
   return j * samples.a.length + i;
 }
 
-function buildMinimumCurve(nodes: readonly GridNode[], samples: GridSamples): MinimumCurve {
+function buildMinimumCurve(nodes: readonly GridNode[], samples: GridSamples): GraphCurve {
   return samples.a.map((_, i) => {
     let best: GridNode | null = null;
     for (let j = 1; j < samples.s.length - 1; j++) {
       const previous = nodes[gridIndex(i, j - 1, samples)];
       const node = nodes[gridIndex(i, j, samples)];
       const next = nodes[gridIndex(i, j + 1, samples)];
-      if (!finiteSide(previous.side) || !finiteSide(node.side) || !finiteSide(next.side)) {
-        continue;
-      }
-      if (
-        node.side <= previous.side &&
-        node.side <= next.side &&
-        (best === null || node.side < (best.side ?? Number.POSITIVE_INFINITY))
-      ) {
+      if (!finiteSide(previous.side) || !finiteSide(node.side) || !finiteSide(next.side)) continue;
+      if (node.side <= previous.side && node.side <= next.side
+        && (best === null || node.side < (best.side ?? Number.POSITIVE_INFINITY))) {
         best = node;
       }
     }
@@ -281,7 +289,33 @@ function buildMinimumCurve(nodes: readonly GridNode[], samples: GridSamples): Mi
   });
 }
 
-function interpolateCurveB(curve: MinimumCurve, a: number): number | null {
+function transitionValue(a: number, b: number): number {
+  const p = 1 - b;
+  const q = 1 - a;
+  const sum = p + q;
+  return sum ** 4 - sum ** 2 + p * q;
+}
+
+// T=0 changes the radial c* formula. It is a reference curve, not a minimum claim.
+function buildTransitionCurve(aSamples: readonly number[], enabledPointIds: readonly string[]): GraphCurve {
+  return aSamples.map((a) => {
+    let low = 1 - a + DOMAIN_EPS;
+    let high = upperBoundary(a) - DOMAIN_EPS;
+    if (low >= high || transitionValue(a, low) < 0 || transitionValue(a, high) > 0) {
+      return null;
+    }
+    for (let iteration = 0; iteration < 42; iteration++) {
+      const middle = (low + high) / 2;
+      if (transitionValue(a, middle) > 0) low = middle;
+      else high = middle;
+    }
+    const b = (low + high) / 2;
+    const sample = evaluateNinePoint(a, b, enabledPointIds);
+    return sample.side === null ? null : { a, b, s: domainSFromB(a, b) ?? 0, side: sample.side, t: 0 };
+  });
+}
+
+function interpolateCurveB(curve: GraphCurve, a: number): number | null {
   let previous: GridNode | null = null;
   for (const node of curve) {
     if (node === null) continue;
@@ -296,7 +330,7 @@ function interpolateCurveB(curve: MinimumCurve, a: number): number | null {
   return previous !== null && Math.abs(previous.a - a) < 1e-12 ? previous.b : null;
 }
 
-function isInSpecialCurveNeighborhood(a: number, b: number, specialCurve: MinimumCurve | null): boolean {
+function isInSpecialCurveNeighborhood(a: number, b: number, specialCurve: GraphCurve | null): boolean {
   if (specialCurve === null) return false;
   const curveB = interpolateCurveB(specialCurve, a);
   return curveB !== null && Math.abs(b - curveB) <= SPECIAL_CURVE_NEIGHBORHOOD_B_WIDTH;
@@ -311,7 +345,7 @@ function cellCenter(nodes: readonly GridNode[]): { a: number; b: number } {
 
 function isCellVisible(
   nodes: readonly GridNode[],
-  specialCurve: MinimumCurve | null,
+  specialCurve: GraphCurve | null,
   specialCurveNeighborhoodOnly: boolean,
 ): boolean {
   if (!specialCurveNeighborhoodOnly) return true;
@@ -329,7 +363,7 @@ function surfacePosition(node: GridNode): [number, number, number] {
 
 function makeSurfaceGeometry(
   grid: GridData,
-  specialCurve: MinimumCurve | null,
+  specialCurve: GraphCurve | null,
   specialCurveNeighborhoodOnly: boolean,
 ) {
   const positions: number[] = [];
@@ -375,7 +409,7 @@ function makeSurfaceGeometry(
   return geometry;
 }
 
-function makeMinimumCurveGeometry(nodes: MinimumCurve, zOffset: number) {
+function makeCurveGeometry(nodes: GraphCurve, zOffset: number) {
   const positions: number[] = [];
   for (let i = 0; i < nodes.length - 1; i++) {
     const start = nodes[i];
@@ -435,14 +469,13 @@ export function createCoreGraphRenderer(
   }
   const heatmapContext: CanvasRenderingContext2D = rawHeatmapContext;
 
-  let enabledPointIds = CORE_CASE_POINT_IDS.slice();
+  let enabledPointIds: string[] = NINE_POINT_IDS.slice();
   let sampleRate: CoreGraphSampleRate = 'low';
   let denseSpecialCurveSampling = false;
   let specialCurveNeighborhoodOnly = false;
-  let strictTwoLineSuperset = false;
-  let relaxedPPoints = false;
-  let specialCurve: MinimumCurve | null = null;
-  let grid = buildGrid(enabledPointIds, sampleRate, currentLocalRegionVariant(), relaxedPPoints);
+  let showDisk = true;
+  let specialCurve: GraphCurve | null = null;
+  let grid = buildGrid(enabledPointIds, sampleRate);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#ffffff');
 
@@ -467,10 +500,16 @@ export function createCoreGraphRenderer(
   scene.add(surface);
 
   const minimumCurve = new THREE.LineSegments(
-    makeMinimumCurveGeometry(grid.minimumCurve, MINIMUM_CURVE_Z_OFFSET),
+    makeCurveGeometry(grid.minimumCurve, CURVE_Z_OFFSET),
     new THREE.LineBasicMaterial({ color: MINIMUM_CURVE_COLOR }),
   );
   scene.add(minimumCurve);
+  const transitionCurve = new THREE.LineSegments(
+    makeCurveGeometry(grid.transitionCurve, CURVE_Z_OFFSET),
+    new THREE.LineDashedMaterial({ color: TRANSITION_CURVE_COLOR, dashSize: 0.07, gapSize: 0.045 }),
+  );
+  transitionCurve.computeLineDistances();
+  scene.add(transitionCurve);
 
   scene.add(makeBaseGrid());
   scene.add(new THREE.AmbientLight('#ffffff', 1.9));
@@ -495,48 +534,17 @@ export function createCoreGraphRenderer(
   let activeHeatmapPointer: number | null = null;
   let lastSurfacePoint: CanvasPoint | null = null;
   let sliceK = (grid.minSide + grid.maxSide) / 2;
-  let selection = evaluateCoreCaseGraph(
-    0.55,
-    0.55,
-    enabledPointIds,
-    currentLocalRegionVariant(),
-    relaxedPPoints,
-  );
-  let onSelectionChange: ((sample: CoreCaseGraphSample) => void) | null = null;
+  let selection = evaluateNinePoint(0.55, 0.58, enabledPointIds);
+  let onSelectionChange: ((sample: NinePointEvaluation) => void) | null = null;
 
-  function currentLocalRegionVariant(): AbUnionLocalRegionVariant {
-    return strictTwoLineSuperset ? 'strict-two-line-superset' : 'exact';
-  }
-
-  function nearestValidSelection(): CoreCaseGraphSample | null {
-    const nearest = grid.nodes
-      .filter((node) => node.side !== null)
-      .reduce((best, node) => {
-        const score = Math.hypot(node.a - 0.55, node.b - 0.55);
-        return score < best.score ? { score, node } : best;
-      }, { score: Number.POSITIVE_INFINITY, node: null as GridNode | null }).node;
-    return nearest
-      ? evaluateCoreCaseGraph(nearest.a, nearest.b, enabledPointIds, currentLocalRegionVariant(), relaxedPPoints)
-      : null;
-  }
-
-  if (!selection.domainOk) {
-    selection = nearestValidSelection() ?? selection;
-  }
-
-  function getSpecialCurve(): MinimumCurve {
+  function getSpecialCurve(): GraphCurve {
     if (specialCurve === null) {
-      specialCurve = buildGrid(
-        CORE_CASE_POINT_IDS,
-        'high',
-        currentLocalRegionVariant(),
-        relaxedPPoints,
-      ).minimumCurve;
+      specialCurve = buildTransitionCurve(buildASamples(SAMPLE_PROFILES.high.aCount), NINE_POINT_IDS);
     }
     return specialCurve;
   }
 
-  function specialCurveForNeighborhood(): MinimumCurve | null {
+  function specialCurveForNeighborhood(): GraphCurve | null {
     return specialCurveNeighborhoodOnly ? getSpecialCurve() : null;
   }
 
@@ -627,16 +635,11 @@ export function createCoreGraphRenderer(
   }
 
   function applySelection(a: number, b: number, emit: boolean): void {
-    const sample = evaluateCoreCaseGraph(
-      clamp01(a),
-      clamp01(b),
+    const sample = evaluateNinePoint(
+      a,
+      b,
       enabledPointIds,
-      currentLocalRegionVariant(),
-      relaxedPPoints,
     );
-    if (!sample.domainOk) {
-      return;
-    }
     selection = sample;
     updateMarker();
     drawHeatmap();
@@ -652,7 +655,9 @@ export function createCoreGraphRenderer(
       return;
     }
     const { a, b } = heatmapToDomain(point);
-    applySelection(a, b, true);
+    if (evaluateNinePoint(a, b, enabledPointIds).domainOk) {
+      applySelection(a, b, true);
+    }
   }
 
   function drawHeatmapFrame(): void {
@@ -725,7 +730,7 @@ export function createCoreGraphRenderer(
   function interpolateContourPoint(start: GridNode, end: GridNode, level: number): CanvasPoint {
     const startSide = start.side ?? level;
     const endSide = end.side ?? level;
-    const t = clamp01((level - startSide) / Math.max(1e-12, endSide - startSide));
+    const t = clamp01((level - startSide) / (endSide - startSide));
     return domainToHeatmap(
       start.a + (end.a - start.a) * t,
       start.b + (end.b - start.b) * t,
@@ -814,7 +819,7 @@ export function createCoreGraphRenderer(
     ctx.restore();
   }
 
-  function drawCurve(curve: MinimumCurve, color: string, lineWidth: number, haloWidth: number): void {
+  function drawCurve(curve: GraphCurve, color: string, lineWidth: number, haloWidth: number, dash: number[] = []): void {
     const ctx = heatmapContext;
 
     function strokeCurve(strokeColor: string, strokeWidth: number): void {
@@ -841,13 +846,34 @@ export function createCoreGraphRenderer(
     }
 
     ctx.save();
+    ctx.setLineDash(dash);
     strokeCurve('rgba(255, 255, 255, 0.9)', haloWidth);
     strokeCurve(color, lineWidth);
     ctx.restore();
   }
 
-  function drawMinimumCurves(): void {
+  function drawGraphCurves(): void {
+    drawCurve(grid.transitionCurve, TRANSITION_CURVE_COLOR, 1.8, 4, [5, 4]);
     drawCurve(grid.minimumCurve, MINIMUM_CURVE_COLOR, 2.4, 5);
+    const ctx = heatmapContext;
+    ctx.save();
+    ctx.font = `${FONT_SIZE}px monospace`;
+    for (const [index, color, label] of [
+      [0, MINIMUM_CURVE_COLOR, 'Sampled minima over b'],
+      [1, TRANSITION_CURVE_COLOR, 'T(p,q)=0 reference'],
+    ] as const) {
+      const y = 12 + index * 16;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash(index === 1 ? [5, 4] : []);
+      ctx.beginPath();
+      ctx.moveTo(HEATMAP_PADDING, y - 4);
+      ctx.lineTo(HEATMAP_PADDING + 18, y - 4);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.fillText(label, HEATMAP_PADDING + 24, y);
+    }
+    ctx.restore();
   }
 
   function drawSelectionMarker(): void {
@@ -883,7 +909,7 @@ export function createCoreGraphRenderer(
       drawContour(grid.minSide + (grid.maxSide - grid.minSide) * fraction, 'rgba(255, 255, 255, 0.62)', 1.2);
     }
     drawContour(sliceK, '#111827', 2.2);
-    drawMinimumCurves();
+    drawGraphCurves();
     drawSelectionMarker();
   }
 
@@ -921,25 +947,22 @@ export function createCoreGraphRenderer(
     grid = buildGrid(
       enabledPointIds,
       sampleRate,
-      currentLocalRegionVariant(),
-      relaxedPPoints,
       denseSpecialCurveSampling ? getSpecialCurve() : null,
     );
     refreshSurfaceGeometry();
-    const nextCurveGeometry = makeMinimumCurveGeometry(grid.minimumCurve, MINIMUM_CURVE_Z_OFFSET);
+    const nextMinimumGeometry = makeCurveGeometry(grid.minimumCurve, CURVE_Z_OFFSET);
     minimumCurve.geometry.dispose();
-    minimumCurve.geometry = nextCurveGeometry;
+    minimumCurve.geometry = nextMinimumGeometry;
+    const nextCurveGeometry = makeCurveGeometry(grid.transitionCurve, CURVE_Z_OFFSET);
+    transitionCurve.geometry.dispose();
+    transitionCurve.geometry = nextCurveGeometry;
+    transitionCurve.computeLineDistances();
     sliceK = clamp(sliceK, grid.minSide, grid.maxSide);
-    selection = evaluateCoreCaseGraph(
+    selection = evaluateNinePoint(
       selection.a,
       selection.b,
       enabledPointIds,
-      currentLocalRegionVariant(),
-      relaxedPPoints,
     );
-    if (!selection.domainOk) {
-      selection = nearestValidSelection() ?? selection;
-    }
     render();
   }
 
@@ -1030,7 +1053,7 @@ export function createCoreGraphRenderer(
     setSelection(a: number, b: number): void {
       applySelection(a, b, false);
     },
-    getSelection(): CoreCaseGraphSample {
+    getSelection(): NinePointEvaluation {
       return selection;
     },
     setSliceK(value: number): void {
@@ -1068,23 +1091,11 @@ export function createCoreGraphRenderer(
     getSpecialCurveNeighborhoodOnly(): boolean {
       return specialCurveNeighborhoodOnly;
     },
-    setStrictTwoLineSuperset(value: boolean): void {
-      if (value === strictTwoLineSuperset) return;
-      strictTwoLineSuperset = value;
-      specialCurve = null;
-      rebuildGrid();
+    setShowDisk(value: boolean): void {
+      showDisk = value;
     },
-    getStrictTwoLineSuperset(): boolean {
-      return strictTwoLineSuperset;
-    },
-    setRelaxedPPoints(value: boolean): void {
-      if (value === relaxedPPoints) return;
-      relaxedPPoints = value;
-      specialCurve = null;
-      rebuildGrid();
-    },
-    getRelaxedPPoints(): boolean {
-      return relaxedPPoints;
+    getShowDisk(): boolean {
+      return showDisk;
     },
     setEnabledPointIds(ids: readonly string[]): void {
       const normalized = normalizeEnabledPointIds(ids);
@@ -1095,7 +1106,29 @@ export function createCoreGraphRenderer(
     getEnabledPointIds(): string[] {
       return enabledPointIds.slice();
     },
-    setOnSelectionChange(callback: (sample: CoreCaseGraphSample) => void): void {
+    getState(): CoreGraphState {
+      return {
+        a: selection.a,
+        b: selection.b,
+        k: sliceK,
+        sampleRate,
+        denseSpecialCurveSampling,
+        specialCurveNeighborhoodOnly,
+        enabledPointIds: enabledPointIds.slice(),
+        showDisk,
+      };
+    },
+    restoreState(state: CoreGraphState): void {
+      enabledPointIds = normalizeEnabledPointIds(state.enabledPointIds);
+      sampleRate = state.sampleRate;
+      denseSpecialCurveSampling = state.denseSpecialCurveSampling;
+      specialCurveNeighborhoodOnly = state.specialCurveNeighborhoodOnly;
+      showDisk = state.showDisk;
+      sliceK = state.k;
+      selection = evaluateNinePoint(state.a, state.b, enabledPointIds);
+      rebuildGrid();
+    },
+    setOnSelectionChange(callback: (sample: NinePointEvaluation) => void): void {
       onSelectionChange = callback;
     },
   };

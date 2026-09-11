@@ -13,9 +13,7 @@ import {
 import type { CoreCaseTool } from '../../app/types';
 import { canvasToMath, config, scaleToMath } from '../../coords';
 import {
-  CORE_CASE_POINT_IDS,
   createDefaultCoreCaseState,
-  drawCoreCaseGraphSample,
   isCoreCasePointId,
   moveCoreCaseDot,
   renderCoreCase,
@@ -23,6 +21,8 @@ import {
   type CoreCaseRenderResult,
 } from '../../coreCase';
 import { createCoreGraphRenderer } from '../../coreGraph';
+import { NINE_POINT_IDS } from '../../strategy3/geometry';
+import { drawWitnessConstruction } from '../../strategy3/render';
 import { drawHexagon, HEXAGON_VERTICES } from '../../hexagon';
 import { createRegionRenderer } from '../../region';
 import type { Point, ShapeMode, TriangleState } from '../../types';
@@ -50,8 +50,9 @@ export function createCoreController(deps: Dependencies) {
   const coreSampleRateSelect = document.getElementById('core-sample-rate-select') as HTMLSelectElement;
   const coreDenseSpecialCurveToggle = document.getElementById('core-dense-special-curve-toggle') as HTMLInputElement;
   const coreSpecialNeighborhoodToggle = document.getElementById('core-special-neighborhood-toggle') as HTMLInputElement;
-  const coreStrictTwoLineToggle = document.getElementById('core-strict-two-line-toggle') as HTMLInputElement;
-  const coreRelaxedPToggle = document.getElementById('core-relaxed-p-toggle') as HTMLInputElement;
+  const coreAInput = document.getElementById('core-a-input') as HTMLInputElement;
+  const coreBInput = document.getElementById('core-b-input') as HTMLInputElement;
+  const coreDiskToggle = document.getElementById('core-disk-toggle') as HTMLInputElement;
   const coreSurfaceCanvas = document.getElementById('core-surface-canvas') as HTMLCanvasElement;
   const coreHeatmapCanvas = document.getElementById('core-heatmap-canvas') as HTMLCanvasElement;
   const coreSliceSlider = document.getElementById('core-slice-slider') as HTMLInputElement;
@@ -72,7 +73,7 @@ export function createCoreController(deps: Dependencies) {
 
   function coreGraphDisabledPointIds(): string[] {
     const enabledIds = new Set(coreGraphRenderer.getEnabledPointIds());
-    return CORE_CASE_POINT_IDS.filter((id) => !enabledIds.has(id));
+    return NINE_POINT_IDS.filter((id) => !enabledIds.has(id));
   }
 
   function pruneCoreCaseDisabledPointIds(currentPointIds: readonly string[]): void {
@@ -280,19 +281,27 @@ export function createCoreController(deps: Dependencies) {
     coreSampleRateSelect.value = coreGraphRenderer.getSampleRate();
     coreDenseSpecialCurveToggle.checked = coreGraphRenderer.getDenseSpecialCurveSampling();
     coreSpecialNeighborhoodToggle.checked = coreGraphRenderer.getSpecialCurveNeighborhoodOnly();
-    coreStrictTwoLineToggle.checked = coreGraphRenderer.getStrictTwoLineSuperset();
-    coreRelaxedPToggle.checked = coreGraphRenderer.getRelaxedPPoints();
+    if (document.activeElement !== coreAInput) coreAInput.value = sample.a.toString();
+    if (document.activeElement !== coreBInput) coreBInput.value = sample.b.toString();
+    coreDiskToggle.checked = coreGraphRenderer.getShowDisk();
+    const valueName = enabledIds.size === NINE_POINT_IDS.length ? 'F(a,b)' : 'subset side';
     coreGraphStatus.textContent = sample.side === null
       ? `selected a=${sample.a.toFixed(4)}, b=${sample.b.toFixed(4)}: ${sample.status}`
-      : `selected a=${sample.a.toFixed(4)}, b=${sample.b.toFixed(4)}, f=${sample.side.toFixed(6)} using ${sample.enabledPointCount} points`;
+      : `selected a=${sample.a.toFixed(4)}, b=${sample.b.toFixed(4)}, ${valueName}=${sample.side.toFixed(6)}; ${sample.enabledPointCount}/9 points; c*=${sample.cStar?.toFixed(6)}`;
     corePointControls.innerHTML = `
-    <span>points</span>
-    ${CORE_CASE_POINT_IDS.map((id) => `
-      <label>
-        <input type="checkbox" data-core-graph-point="${escapeHtml(id)}"${enabledIds.has(id) ? ' checked' : ''}/>
-        ${escapeHtml(id)}
-      </label>
-    `).join('')}
+    <table class="ab-union-table">
+      <thead><tr><th>use</th><th>id</th><th>source</th><th>x</th><th>y</th></tr></thead>
+      <tbody>${NINE_POINT_IDS.map((id) => {
+        const item = sample.points.find((point) => point.id === id);
+        return `<tr>
+          <td><input type="checkbox" data-core-graph-point="${escapeHtml(id)}"${enabledIds.has(id) ? ' checked' : ''}/></td>
+          <td>${escapeHtml(id)}</td>
+          <td>${escapeHtml(item?.label ?? '')}</td>
+          <td>${item?.point?.x.toFixed(5) ?? '—'}</td>
+          <td>${item?.point?.y.toFixed(5) ?? '—'}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>
   `;
   }
 
@@ -441,22 +450,21 @@ export function createCoreController(deps: Dependencies) {
     const sample = coreGraphRenderer.getSelection();
     deps.ctx.clearRect(0, 0, config.canvasSize, config.canvasSize);
     drawHexagon(deps.ctx);
-    drawCoreCaseGraphSample(deps.ctx, sample);
-    deps.gammaValues.textContent = `a4=${sample.a.toFixed(6)}, b4=${sample.b.toFixed(6)}, a4+b4-1=${sample.strictGap.toExponential(3)}`;
-    deps.localCBounds.textContent = `Core graph domain: a+b>1 and a^2+ab+b^2<=1; D points use algorithm 2; ${coreGraphRenderer.getStrictTwoLineSuperset() ? 'two-line AB superset' : 'exact AB'}; ${coreGraphRenderer.getRelaxedPPoints() ? 'relaxed P circles' : 'actual P circles'}`;
-    const enabledCoreGraphPoints = sample.points.filter((point) => point.enabled).map((point) => point.id).join(' ');
+    drawWitnessConstruction(deps.ctx, sample, { showDisk: coreGraphRenderer.getShowDisk() });
+    deps.gammaValues.textContent = `a=${sample.a.toFixed(6)}, b=${sample.b.toFixed(6)}, a+b-1=${sample.strictGap.toExponential(3)}`;
+    deps.localCBounds.textContent = 'F9 domain: 0<a,b<1, a+b>1, a²+ab+b²<1. Fixed Q−, Q0, Q+ and six radial witnesses.';
+    const valueName = coreGraphRenderer.getEnabledPointIds().length === NINE_POINT_IDS.length ? 'F(a,b)' : 'subset side';
     deps.localCValues.textContent = sample.side === null
-      ? `f(a,b) unavailable: ${sample.status}`
-      : `f(a,b) = ${sample.side.toFixed(6)} from ${enabledCoreGraphPoints}`;
-    deps.ceStatus.textContent = 'Core f(a,b): CE/g-chain inactive';
+      ? `${valueName} unavailable: ${sample.status}`
+      : `${valueName} = ${sample.side.toFixed(6)}; c*=${sample.cStar?.toFixed(6)}; radius=${sample.diskRadius?.toFixed(6)}`;
+    deps.ceStatus.textContent = 'Strategy 3 · F9: numerical enclosing triangle';
     deps.ceStatus.style.color = '#475569';
     deps.ceChainStatus.textContent = sample.domainStatus;
     deps.ceChainStatus.style.color = sample.domainOk ? '#047857' : '#b91c1c';
-    deps.coverOverlayStatus.textContent = 'Core graph overlays: selected sample circles, points, enclosing triangle';
+    deps.coverOverlayStatus.textContent = `F9 overlays: witness hull, circles, enclosing triangle${coreGraphRenderer.getShowDisk() ? ', centered disk' : ''}`;
     deps.coverOverlayStatus.style.color = '#475569';
     syncCoreGraphPanel();
     coreGraphRenderer.render();
-    return;
   }
 
   function bindCoreControls(): void {
@@ -485,13 +493,17 @@ export function createCoreController(deps: Dependencies) {
       deps.render();
     });
 
-    coreStrictTwoLineToggle.addEventListener('change', () => {
-      coreGraphRenderer.setStrictTwoLineSuperset(coreStrictTwoLineToggle.checked);
+    function updateParameters(): void {
+      const a = coreAInput.valueAsNumber;
+      const b = coreBInput.valueAsNumber;
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return;
+      coreGraphRenderer.setSelection(a, b);
       deps.render();
-    });
-
-    coreRelaxedPToggle.addEventListener('change', () => {
-      coreGraphRenderer.setRelaxedPPoints(coreRelaxedPToggle.checked);
+    }
+    coreAInput.addEventListener('input', updateParameters);
+    coreBInput.addEventListener('input', updateParameters);
+    coreDiskToggle.addEventListener('change', () => {
+      coreGraphRenderer.setShowDisk(coreDiskToggle.checked);
       deps.render();
     });
 
@@ -501,7 +513,7 @@ export function createCoreController(deps: Dependencies) {
         return;
       }
       const requested = target.dataset.coreGraphPoint;
-      if (!CORE_CASE_POINT_IDS.includes(requested)) {
+      if (!NINE_POINT_IDS.some((id) => id === requested)) {
         return;
       }
       const enabled = new Set(coreGraphRenderer.getEnabledPointIds());
@@ -510,7 +522,7 @@ export function createCoreController(deps: Dependencies) {
       } else {
         enabled.delete(requested);
       }
-      coreGraphRenderer.setEnabledPointIds(CORE_CASE_POINT_IDS.filter((id) => enabled.has(id)));
+      coreGraphRenderer.setEnabledPointIds(NINE_POINT_IDS.filter((id) => enabled.has(id)));
       deps.render();
     });
 

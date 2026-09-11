@@ -20,10 +20,11 @@ Use `npm run preview` to inspect the production build. See
 - `index.html` and `src/main.ts`: app shell and bootstrap.
 - `src/app/`: shared app wiring, controls, state snapshots, and rendering.
 - `src/modes/`: controllers for base shapes, Free, AB Union, Hull Debug, Area,
-  and Core modes. Free keeps its panels, drawing, sampling, and snapshot codec separate.
+  Core, and Strategy 3 modes. Free keeps its panels, drawing, sampling, and snapshot codec separate.
+- `src/strategy3/`: BC/D/F witness geometry, shared drawing, and BC/D state.
 - `src/ab-union/`: AB-region geometry, state, rendering, and interaction.
 - Other `src/` modules: shared geometry, interactions, and numerical models.
-- `scripts/`: AB geometry/state, snapshot compatibility, and Cunion verification.
+- `scripts/`: AB geometry/state, snapshot compatibility, Cunion, and Strategy 3 verification.
 
 ## Documentation
 
@@ -31,6 +32,8 @@ Use `npm run preview` to inspect the production build. See
 - [Mathematical definitions](docs/MATH.md)
 - [Free mode](docs/FREEMODE.md)
 - [Core case](docs/CORE_CASE.md)
+- [Strategy 3 constructions](docs/STRATEGY3.md): six-point BC, four-point D,
+  and nine-point F modes.
 - [Axis-aligned polygon hull](docs/AxisAlignedPolygonHull.md)
 
 ## Research

@@ -8,7 +8,7 @@ From that snapshot, `counterexample_cover.py` constructs seven closed equilatera
 This is a skeleton-cover example. The upstream [proved theorem](https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/proof/0XXX_main/0000_main_theorem.md)
 concerns the filled hexagon; the script does not verify coverage of its interior.
 The retained version-2 snapshot is input for this Python verifier. The current
-browser controller loader accepts versions 8–9, so this historical snapshot
+browser controller loader accepts versions 8–10, so this historical snapshot
 cannot be loaded directly into the current app.
 
 ## Relevant files

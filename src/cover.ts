@@ -125,12 +125,18 @@ function localPoints(index: number, step: CoverStep): Point[] {
 }
 
 function requiredInradius(points: Point[], beta: number): number {
-  const normals = [0, 1, 2].map((k) => ({
-    x: Math.cos(beta + 2 * Math.PI * k / 3),
-    y: Math.sin(beta + 2 * Math.PI * k / 3),
-  }));
-  const offsets = normals.map((normal) => Math.max(...points.map((point) => dot(normal, point))));
-  return offsets.reduce((sum, value) => sum + value, 0) / 3;
+  let sum = 0;
+  for (let k = 0; k < 3; k++) {
+    const angle = beta + 2 * Math.PI * k / 3;
+    const nx = Math.cos(angle);
+    const ny = Math.sin(angle);
+    let offset = Number.NEGATIVE_INFINITY;
+    for (const point of points) {
+      offset = Math.max(offset, nx * point.x + ny * point.y);
+    }
+    sum += offset;
+  }
+  return sum / 3;
 }
 
 function centroidFromBeta(points: Point[], beta: number): Point {

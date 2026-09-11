@@ -42,8 +42,9 @@ is documented in [APP.md](../docs/APP.md#max-area-and-area-conj-modes).
 obstruction.** Six radial witnesses and three frontier witnesses close the
 zero-gap case with exactly one supercritical actual row, independently of
 the center and vertex types. See the [paper's construction][nine-paper] and
-[canonical nine-point theorem][nine-proof]. The app's six-point Core model
-remains documented in [CORE_CASE.md](../docs/CORE_CASE.md).
+[canonical nine-point theorem][nine-proof]. The app's six-point Core Case model
+remains documented in [CORE_CASE.md](../docs/CORE_CASE.md); the graph now uses
+the [nine-point F construction](../docs/STRATEGY3.md#f-nine-point-core).
 
 The July regression remains an empirical observation about the old relaxed
 six-point model. The nine-point theorem does not prove that model's sampled

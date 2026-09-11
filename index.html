@@ -38,8 +38,14 @@
           <button type="button" class="shape-button" data-shape-mode="core-case">
             Core Case
           </button>
+          <button type="button" class="shape-button" data-shape-mode="strategy3-bc">
+            S3 BC (6 points)
+          </button>
+          <button type="button" class="shape-button" data-shape-mode="strategy3-d">
+            S3 D (4 points)
+          </button>
           <button type="button" class="shape-button" data-shape-mode="core-graph">
-            Core f(a,b)
+            S3 F (9 points)
           </button>
         </div>
         <div id="strict-check-panel">
@@ -152,18 +158,6 @@
               <button type="button" id="admissible-reset">Reset</button>
             </div>
           </details>
-          <details id="controller-state-panel">
-            <summary>Controller State</summary>
-            <div class="editor-note">Copy JSON to save the current controllers, then paste and load to restore.</div>
-            <textarea id="controller-state" spellcheck="false"></textarea>
-            <div id="controller-state-row">
-              <div id="controller-state-status">Snapshot updates automatically.</div>
-              <div id="controller-state-actions">
-                <button type="button" id="controller-state-copy">Copy</button>
-                <button type="button" id="controller-state-load">Load</button>
-              </div>
-            </div>
-          </details>
         </div>
         <div id="free-panel" hidden>
           <div id="free-status" class="readout">Free mode inactive</div>
@@ -185,9 +179,17 @@
           <div class="panel-title" id="ab-union-panel-title">ab union region</div>
           <div id="ab-union-controls"></div>
         </div>
+        <div id="strategy3-panel" hidden>
+          <div id="strategy3-controls"></div>
+        </div>
         <div id="core-graph-panel" hidden>
-          <div class="panel-title">Core f(a,b)</div>
-          <div class="readout" id="core-graph-status">loading core graph</div>
+          <div class="panel-title">F: nine-point Core obstruction</div>
+          <div class="readout" id="core-graph-status">loading nine-point graph</div>
+          <div id="core-parameter-row">
+            <label for="core-a-input">a <input id="core-a-input" type="number" min="0" max="1" step="0.0001" value="0.55" /></label>
+            <label for="core-b-input">b <input id="core-b-input" type="number" min="0" max="1" step="0.0001" value="0.58" /></label>
+            <label><input type="checkbox" id="core-disk-toggle" checked /> comparison disk</label>
+          </div>
           <div id="core-sample-row">
             <label for="core-sample-rate-select">sample</label>
             <select id="core-sample-rate-select">
@@ -197,19 +199,11 @@
             </select>
             <label>
               <input type="checkbox" id="core-dense-special-curve-toggle" />
-              dense near 6-point curve
+              dense near T(p,q)=0
             </label>
             <label>
               <input type="checkbox" id="core-special-neighborhood-toggle" />
-              6-point neighborhood only
-            </label>
-            <label>
-              <input type="checkbox" id="core-strict-two-line-toggle" />
-              two-line AB superset
-            </label>
-            <label>
-              <input type="checkbox" id="core-relaxed-p-toggle" />
-              relaxed P circles
+              T(p,q)=0 neighborhood only
             </label>
           </div>
           <div id="core-point-controls"></div>
@@ -233,6 +227,18 @@
           <label for="c-slider">c = <span id="c-value">0.50</span></label>
           <input type="range" id="c-slider" min="0" max="1" step="0.01" value="0.50" />
         </div>
+        <details id="controller-state-panel">
+          <summary>Controller State</summary>
+          <div class="editor-note">Copy JSON to save the current controllers, then paste and load to restore.</div>
+          <textarea id="controller-state" spellcheck="false"></textarea>
+          <div id="controller-state-row">
+            <div id="controller-state-status">Snapshot updates automatically.</div>
+            <div id="controller-state-actions">
+              <button type="button" id="controller-state-copy">Copy</button>
+              <button type="button" id="controller-state-load">Load</button>
+            </div>
+          </div>
+        </details>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

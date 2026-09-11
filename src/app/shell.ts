@@ -1,6 +1,6 @@
 import { setAbUnionTool } from '../ab-union/state';
 import { setCanvasSize } from '../coords';
-import { CORE_CASE_POINT_IDS } from '../coreCase';
+import { NINE_POINT_IDS } from '../strategy3/geometry';
 import {
   getAdmissibleOrderedSource,
   getStrictEps,
@@ -17,6 +17,7 @@ import { createBaseController } from '../modes/base/controller';
 import { createCoreController } from '../modes/core/controller';
 import { createFreeController } from '../modes/free/controller';
 import { createHullDebugController } from '../modes/hull-debug/controller';
+import { createStrategy3Controller } from '../modes/strategy3/controller';
 import { createRegionRenderer, type GraphMode } from '../region';
 import type { ShapeMode, TriangleState } from '../types';
 import {
@@ -54,12 +55,14 @@ export function createApp() {
   const controllerStateCopyButton = document.getElementById('controller-state-copy') as HTMLButtonElement;
   const controllerStateLoadButton = document.getElementById('controller-state-load') as HTMLButtonElement;
   const strictCheckToggle = document.getElementById('strict-check-toggle') as HTMLInputElement;
+  const strictCheckPanel = document.getElementById('strict-check-panel') as HTMLDivElement;
   const strictEpsControls = document.getElementById('strict-eps-controls') as HTMLDivElement;
   const strictEpsSlider = document.getElementById('strict-eps-slider') as HTMLInputElement;
   const strictEpsValueLabel = document.getElementById('strict-eps-value') as HTMLSpanElement;
   const strictEpsInput = document.getElementById('strict-eps-input') as HTMLInputElement;
   const strictEpsMaxInput = document.getElementById('strict-eps-max-input') as HTMLInputElement;
   const coverOverlayToggle = document.getElementById('cover-overlay-toggle') as HTMLInputElement;
+  const coverOverlayPanel = document.getElementById('cover-overlay-panel') as HTMLDivElement;
   const coverOverlayToggleRow = document.getElementById('cover-overlay-toggle-row') as HTMLLabelElement;
   const coverOverlayStatus = document.getElementById('cover-overlay-status') as HTMLDivElement;
   const pointToolPanel = document.getElementById('point-tool-panel') as HTMLDivElement;
@@ -68,6 +71,7 @@ export function createApp() {
   const pointClearButton = document.getElementById('point-clear') as HTMLButtonElement;
   const pointToolStatus = document.getElementById('point-tool-status') as HTMLSpanElement;
   const ceStatus = document.getElementById('ce-status') as HTMLDivElement;
+  const cePanel = document.getElementById('ce-panel') as HTMLDivElement;
   const ceControls = document.getElementById('ce-controls') as HTMLDivElement;
   const ceIntervalSelect = document.getElementById('ce-interval-select') as HTMLSelectElement;
   const ceDirectionSelect = document.getElementById('ce-direction-select') as HTMLSelectElement;
@@ -78,6 +82,8 @@ export function createApp() {
   const abUnionPanelTitle = document.getElementById('ab-union-panel-title') as HTMLDivElement;
   const abUnionControls = document.getElementById('ab-union-controls') as HTMLDivElement;
   const coreGraphPanel = document.getElementById('core-graph-panel') as HTMLDivElement;
+  const strategy3Panel = document.getElementById('strategy3-panel') as HTMLDivElement;
+  const strategy3Controls = document.getElementById('strategy3-controls') as HTMLDivElement;
   const triangleState: TriangleState = {
     position: { x: 0, y: 0 },
     angle: 0,
@@ -124,8 +130,9 @@ export function createApp() {
   }
 
   function getControllerSnapshot(): ControllerSnapshot {
+    const coreGraph = core.coreGraphRenderer.getState();
     return {
-      version: 9,
+      version: 10,
       shapeMode,
       graphMode,
       startValue: clamp01(startValue),
@@ -156,8 +163,11 @@ export function createApp() {
       coreGraphSampleRate: core.coreGraphRenderer.getSampleRate(),
       coreGraphDenseSpecialCurveSampling: core.coreGraphRenderer.getDenseSpecialCurveSampling(),
       coreGraphSpecialCurveNeighborhoodOnly: core.coreGraphRenderer.getSpecialCurveNeighborhoodOnly(),
-      coreGraphStrictTwoLineSuperset: core.coreGraphRenderer.getStrictTwoLineSuperset(),
-      coreGraphRelaxedPPoints: core.coreGraphRenderer.getRelaxedPPoints(),
+      coreGraphA: coreGraph.a,
+      coreGraphB: coreGraph.b,
+      coreGraphSliceK: coreGraph.k,
+      coreGraphShowDisk: coreGraph.showDisk,
+      strategy3: strategy3.getState(),
     };
   }
 
@@ -168,6 +178,7 @@ export function createApp() {
 
   function loadControllerSnapshot(raw: string): void {
     const snapshot = parseControllerSnapshot(raw);
+    const originalVersion = (JSON.parse(raw) as { version: number }).version;
     const admissibleResult = setAdmissibleOrderedSource(snapshot.admissibleSource);
     if (!admissibleResult.ok) {
       throw new Error(`Admissible source compile error: ${admissibleResult.error}`);
@@ -197,14 +208,17 @@ export function createApp() {
     core.coreCaseOptions.algorithm2Diagonals = snapshot.coreCaseAlgorithm2Diagonals;
     core.coreCaseOptions.strictTwoLineSuperset = snapshot.coreCaseStrictTwoLineSuperset;
     core.setCoreCaseRelaxedPPoints(snapshot.coreCaseRelaxedPPoints);
-    core.coreGraphRenderer.setSampleRate(snapshot.coreGraphSampleRate);
-    core.coreGraphRenderer.setDenseSpecialCurveSampling(snapshot.coreGraphDenseSpecialCurveSampling);
-    core.coreGraphRenderer.setSpecialCurveNeighborhoodOnly(snapshot.coreGraphSpecialCurveNeighborhoodOnly);
-    core.coreGraphRenderer.setStrictTwoLineSuperset(snapshot.coreGraphStrictTwoLineSuperset);
-    core.coreGraphRenderer.setRelaxedPPoints(snapshot.coreGraphRelaxedPPoints);
-    core.coreGraphRenderer.setEnabledPointIds(
-      CORE_CASE_POINT_IDS.filter((id) => !snapshot.coreGraphDisabledPointIds.includes(id)),
-    );
+    strategy3.restoreState(snapshot.strategy3);
+    core.coreGraphRenderer.restoreState({
+      a: snapshot.coreGraphA,
+      b: snapshot.coreGraphB,
+      k: snapshot.coreGraphSliceK,
+      sampleRate: snapshot.coreGraphSampleRate,
+      denseSpecialCurveSampling: snapshot.coreGraphDenseSpecialCurveSampling,
+      specialCurveNeighborhoodOnly: snapshot.coreGraphSpecialCurveNeighborhoodOnly,
+      enabledPointIds: NINE_POINT_IDS.filter((id) => !snapshot.coreGraphDisabledPointIds.includes(id)),
+      showDisk: snapshot.coreGraphShowDisk,
+    });
     core.coreCaseTool = 'move';
     setAbUnionTool(core.coreCaseState, 'move');
     ceDirectionSelect.value = base.ceDirection;
@@ -216,7 +230,9 @@ export function createApp() {
     syncModeButtons();
     render();
     syncControllerSnapshot();
-    setControllerStateStatus('Snapshot loaded.');
+    setControllerStateStatus(originalVersion < 10 && shapeMode === 'core-graph'
+      ? 'Legacy Core graph snapshot loaded in the updated nine-point construction.'
+      : 'Snapshot loaded.');
   }
 
   function toggleSelectedHalfDiagonal(index: number): void {
@@ -236,6 +252,8 @@ export function createApp() {
       shapeMode !== 'max-area' &&
       shapeMode !== 'area-conj' &&
       shapeMode !== 'core-case' &&
+      shapeMode !== 'strategy3-bc' &&
+      shapeMode !== 'strategy3-d' &&
       shapeMode !== 'core-graph';
   }
 
@@ -247,6 +265,8 @@ export function createApp() {
       shapeMode !== 'max-area' &&
       shapeMode !== 'area-conj' &&
       shapeMode !== 'core-case' &&
+      shapeMode !== 'strategy3-bc' &&
+      shapeMode !== 'strategy3-d' &&
       shapeMode !== 'core-graph';
     pointToolPanel.hidden = !visible;
     pointToolToggle.classList.toggle('is-active', visible && pointToolActive);
@@ -273,7 +293,11 @@ export function createApp() {
     } else if (shapeMode === 'core-case') {
       shapeTitle.textContent = 'Core Case';
     } else if (shapeMode === 'core-graph') {
-      shapeTitle.textContent = 'Core f(a,b)';
+      shapeTitle.textContent = 'S3 F: nine-point Core obstruction';
+    } else if (shapeMode === 'strategy3-bc') {
+      shapeTitle.textContent = 'S3 BC: six-point selected gap';
+    } else if (shapeMode === 'strategy3-d') {
+      shapeTitle.textContent = 'S3 D: four-point rescuer';
     } else {
       shapeTitle.textContent = 'c_i controls';
     }
@@ -290,18 +314,24 @@ export function createApp() {
     const areaConjActive = shapeMode === 'area-conj';
     const coreCaseActive = shapeMode === 'core-case';
     const coreGraphActive = shapeMode === 'core-graph';
-    sliderRow.hidden = freeActive || abUnionActive || abHullDebugActive || maxAreaActive || areaConjActive || coreCaseActive || coreGraphActive || graphMode !== 'single';
-    cSlider.disabled = freeActive || abUnionActive || abHullDebugActive || maxAreaActive || areaConjActive || coreCaseActive || coreGraphActive || graphMode !== 'single';
-    graphPanel.hidden = freeActive || abUnionActive || abHullDebugActive || maxAreaActive || areaConjActive || coreCaseActive || coreGraphActive;
+    const strategy3Active = shapeMode === 'strategy3-bc' || shapeMode === 'strategy3-d';
+    sliderRow.hidden = freeActive || abUnionActive || abHullDebugActive || maxAreaActive || areaConjActive || coreCaseActive || coreGraphActive || strategy3Active || graphMode !== 'single';
+    cSlider.disabled = freeActive || abUnionActive || abHullDebugActive || maxAreaActive || areaConjActive || coreCaseActive || coreGraphActive || strategy3Active || graphMode !== 'single';
+    graphPanel.hidden = freeActive || abUnionActive || abHullDebugActive || maxAreaActive || areaConjActive || coreCaseActive || coreGraphActive || strategy3Active;
     freePanel.hidden = !freeActive;
     abUnionPanel.hidden = !abUnionActive && !abHullDebugActive && !maxAreaActive && !areaConjActive && !coreCaseActive;
     coreGraphPanel.hidden = !coreGraphActive;
+    strategy3Panel.hidden = !strategy3Active;
+    strictCheckPanel.hidden = strategy3Active || coreGraphActive;
+    coverOverlayPanel.hidden = strategy3Active;
+    cePanel.hidden = strategy3Active;
     abUnionPanelTitle.textContent = abHullDebugActive
       ? 'AB hull debug'
       : shapeMode === 'max-area' ? 'Max Area'
         : shapeMode === 'area-conj' ? 'Area Conj'
           : shapeMode === 'core-case' ? 'Core Case' : 'ab union region';
     free.freeInteractionApi?.setEnabled(freeActive);
+    strategy3.setEnabled(strategy3Active);
     coverOverlayToggle.disabled = !isCoverOverlayAvailable();
     coverOverlayToggle.checked = showCoverOverlay && isCoverOverlayAvailable();
     coverOverlayToggleRow.classList.toggle('is-disabled', !isCoverOverlayAvailable());
@@ -369,6 +399,16 @@ export function createApp() {
     else if (shapeMode === 'area-conj') area.renderAreaConjFrame();
     else if (shapeMode === 'core-case') core.renderCoreCaseFrame();
     else if (shapeMode === 'core-graph') core.renderCoreGraphFrame();
+    else if (shapeMode === 'strategy3-bc' || shapeMode === 'strategy3-d') {
+      gammaValues.textContent = 'Strategy 3 witness construction';
+      localCBounds.textContent = '';
+      localCValues.textContent = '';
+      ceStatus.textContent = '';
+      ceControls.hidden = true;
+      ceChainStatus.textContent = '';
+      coverOverlayStatus.textContent = '';
+      strategy3.renderFrame();
+    }
     else base.renderBaseFrame();
     syncControllerSnapshot();
   }
@@ -540,6 +580,13 @@ export function createApp() {
     ceChainStatus,
     coverOverlayStatus,
     regionRenderer
+  });
+  const strategy3 = createStrategy3Controller({
+    canvas,
+    ctx,
+    controls: strategy3Controls,
+    render,
+    get shapeMode() { return shapeMode; },
   });
 
   base.bindBaseControls();

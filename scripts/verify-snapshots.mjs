@@ -29,19 +29,26 @@ try {
   };
   const readController = (overrides = {}) => parseControllerSnapshot(JSON.stringify({ ...controller, ...overrides }));
   const defaultController = readController();
-  assert.equal(defaultController.version, 9);
+  assert.equal(defaultController.version, 10);
   assert.equal(defaultController.strictEpsUpperBound, 0.0001);
   assert.equal(defaultController.strictEps, 0);
   assert.equal(defaultController.ceDirection, 'ccw');
   assert.equal(defaultController.selectedPointSeedId, null);
   assert.deepEqual(defaultController.coreCaseIntervalPointFractions, Array(6).fill(0.5));
   for (const key of ['strictCheckEnabled', 'showCoverOverlay', 'coreCaseAlgorithm2Diagonals',
-    'coreCaseStrictTwoLineSuperset', 'coreCaseRelaxedPPoints', 'coreGraphStrictTwoLineSuperset', 'coreGraphRelaxedPPoints']) {
+    'coreCaseStrictTwoLineSuperset', 'coreCaseRelaxedPPoints']) {
     assert.equal(defaultController[key], false, `${key} defaults to false`);
   }
-  for (const version of [8, 9]) {
+  assert.equal(defaultController.coreGraphA, 0.55);
+  assert.equal(defaultController.coreGraphB, 0.58);
+  assert.equal(defaultController.coreGraphSliceK, 0);
+  assert.equal(defaultController.coreGraphShowDisk, true);
+  assert.equal(defaultController.strategy3.bc.source, 'parameters');
+  assert.equal(defaultController.strategy3.d.source, 'parameters');
+  assert.notEqual(defaultController.strategy3.bc.triangles, defaultController.strategy3.d.triangles);
+  for (const version of [8, 9, 10]) {
     for (const shapeMode of ['triangle', 'circle', 'local-c', 'free', 'ab-union', 'ab-hull-debug',
-      'max-area', 'area-conj', 'core-case', 'core-graph']) {
+      'max-area', 'area-conj', 'core-case', 'strategy3-bc', 'strategy3-d', 'core-graph']) {
       const snapshot = readController({ version, shapeMode });
       assert.deepEqual(parseControllerSnapshot(formatControllerSnapshot(snapshot)), snapshot);
     }
@@ -72,12 +79,12 @@ try {
   assert.equal(normalized.selectedPointSeedId, null);
   assert.equal(readController({ pointSeeds: seeds, selectedPointSeedId: 'Q1_2' }).selectedPointSeedId, 'Q1_2');
   assert.deepEqual(normalized.coreCaseDisabledPointIds, CORE_CASE_POINT_IDS.slice(1));
-  assert.deepEqual(normalized.coreGraphDisabledPointIds, [CORE_CASE_POINT_IDS[0]]);
+  assert.deepEqual(normalized.coreGraphDisabledPointIds, ['Q-']);
   assert.deepEqual(normalized.coreCaseIntervalPointFractions, [0, 1, 0.5, 0.5, 0.5, 0.5]);
   assert.deepEqual(readController({ coreCaseDisabledPointIds: ['I0', 'I0', 'I6', 'invalid'],
     coreCaseEnabledPointIds: [] }).coreCaseDisabledPointIds, ['I0'], 'disabled IDs take precedence over legacy enabled IDs');
   for (const [key, value, message] of [
-    ['version', 7, 'Unsupported snapshot version. Current version is 9.'],
+    ['version', 7, 'Unsupported snapshot version. Current version is 10.'],
     ['shapeMode', 'unknown', 'Invalid shapeMode.'],
     ['graphMode', 'unknown', 'Invalid graphMode.'],
     ['startValue', null, 'Invalid startValue.'],
@@ -97,6 +104,46 @@ try {
     ['ceStartOverrides', [], 'Invalid ceStartOverrides.'],
     ['coreGraphSampleRate', 'unknown', 'Invalid coreGraphSampleRate.'],
   ]) assert.throws(() => readController({ [key]: value }), { message });
+
+  const modeState = structuredClone(defaultController.strategy3);
+  modeState.bc.source = 'triangles';
+  modeState.bc.parameters = { left: 0.35, right: 0.35, radial: [0.2, 0.4, 0.6] };
+  modeState.bc.triangles[0].center = { x: 0.8, y: 0.07 };
+  modeState.bc.triangles[0].angle = 0.25;
+  modeState.bc.selectedTriangleId = 'V3';
+  modeState.d.parameters = { a: 0.1, epsilon: 0.5, beta: 0.4 };
+  const current = readController({
+    version: 10, shapeMode: 'strategy3-bc', strategy3: modeState,
+    coreGraphA: 0.8, coreGraphB: 0.25, coreGraphSliceK: 1.25, coreGraphShowDisk: false,
+    coreGraphDisabledPointIds: ['Q-', 'D5', 'Q-', 'P3', 'invalid'],
+  });
+  assert.deepEqual(current.strategy3, modeState);
+  assert.deepEqual(current.coreGraphDisabledPointIds, ['Q-', 'D5']);
+  assert.equal(current.coreGraphA, 0.8);
+  assert.equal(current.coreGraphB, 0.25);
+  assert.equal(current.coreGraphSliceK, 1.25);
+  const outsideDomain = parseControllerSnapshot(JSON.stringify({ ...current, coreGraphA: -0.1, coreGraphB: 1.1 }));
+  assert.equal(outsideDomain.coreGraphA, -0.1);
+  assert.equal(outsideDomain.coreGraphB, 1.1);
+  assert.equal(current.coreGraphShowDisk, false);
+  assert.deepEqual(parseControllerSnapshot(formatControllerSnapshot(current)), current);
+  for (const version of [8, 9]) {
+    const migrated = readController({ version, shapeMode: 'core-graph',
+      coreGraphDisabledPointIds: ['P3', 'P4', 'P5', 'D0', 'D1', 'D2'],
+      coreGraphStrictTwoLineSuperset: true, coreGraphRelaxedPPoints: true });
+    assert.deepEqual(migrated.coreGraphDisabledPointIds, ['Q-', 'Q0', 'Q+', 'D0', 'D1', 'D2']);
+    assert.ok(!('coreGraphStrictTwoLineSuperset' in migrated));
+    assert.ok(!('coreGraphRelaxedPPoints' in migrated));
+  }
+  for (const [key, value] of [['coreGraphA', null], ['coreGraphB', '0.5'],
+    ['coreGraphSliceK', null], ['coreGraphShowDisk', 'true']]) {
+    assert.throws(() => readController({ version: 10, [key]: value }), { message: `Invalid ${key}.` });
+  }
+  for (const strategy3 of [null, { bc: { ...modeState.bc, source: 'unknown' } },
+    { d: { ...modeState.d, parameters: { a: null, epsilon: 0.4, beta: 0.5 } } },
+    { bc: { ...modeState.bc, triangles: [] } }]) {
+    assert.throws(() => readController({ version: 10, strategy3 }));
+  }
   for (const key of ['strictCheckEnabled', 'showCoverOverlay', 'coreCaseAlgorithm2Diagonals',
     'coreCaseStrictTwoLineSuperset', 'coreCaseRelaxedPPoints', 'coreGraphDenseSpecialCurveSampling',
     'coreGraphSpecialCurveNeighborhoodOnly', 'coreGraphStrictTwoLineSuperset', 'coreGraphRelaxedPPoints']) {
@@ -160,7 +207,7 @@ try {
   ]) assert.throws(() => readFree({ [key]: value }), { message: `Invalid free snapshot${suffix}.` });
   assert.throws(() => parseControllerSnapshot('{'), SyntaxError);
   assert.throws(() => parseFreeSnapshot('{'), SyntaxError);
-  console.log('PASS: controller v8–9 and Free v1–8 snapshot compatibility, normalization, and rejection checks');
+  console.log('PASS: controller v8–10 and Free v1–8 snapshots, Strategy 3 state, legacy graph migration, normalization, and rejection checks');
 } finally {
   await server.close();
 }

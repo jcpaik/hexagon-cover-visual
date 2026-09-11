@@ -88,6 +88,62 @@ canvas {
   display: none;
 }
 
+#core-parameter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font: 13px monospace;
+}
+
+#core-parameter-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#core-parameter-row input[type="number"] {
+  width: 86px;
+  padding: 4px 6px;
+  border: 1px solid #cbd5e1;
+  font: inherit;
+}
+
+#strategy3-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font: 13px monospace;
+}
+
+#strategy3-controls .ab-union-readout {
+  grid-template-columns: minmax(110px, 1fr) minmax(0, 2fr);
+}
+
+#strategy3-controls .ab-union-readout strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+#strategy3-controls .free-small-status {
+  display: block;
+  min-height: 0;
+  margin: 4px 0;
+}
+
+#strategy3-controls [aria-pressed="true"] {
+  border-color: #475569;
+  background: #e2e8f0;
+}
+
+#strict-check-panel[hidden],
+#cover-overlay-panel[hidden],
+#ce-panel[hidden],
+#ce-controls[hidden],
+#slider-row[hidden] {
+  display: none;
+}
+
 #core-surface-canvas {
   aspect-ratio: 5 / 3;
   cursor: grab;
@@ -111,6 +167,7 @@ canvas {
 
 #core-sample-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   font-family: monospace;

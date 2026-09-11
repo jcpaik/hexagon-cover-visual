@@ -170,6 +170,8 @@ export function setupInteraction(
       shapeMode !== 'ab-union' &&
       shapeMode !== 'ab-hull-debug' &&
       shapeMode !== 'core-case' &&
+      shapeMode !== 'strategy3-bc' &&
+      shapeMode !== 'strategy3-d' &&
       shapeMode !== 'core-graph';
   }
 
@@ -205,6 +207,8 @@ export function setupInteraction(
       shapeMode === 'ab-union' ||
       shapeMode === 'ab-hull-debug' ||
       shapeMode === 'core-case' ||
+      shapeMode === 'strategy3-bc' ||
+      shapeMode === 'strategy3-d' ||
       shapeMode === 'core-graph'
     ) {
       return { kind: 'none' };
@@ -339,6 +343,8 @@ export function setupInteraction(
       shapeMode === 'ab-union' ||
       shapeMode === 'ab-hull-debug' ||
       shapeMode === 'core-case' ||
+      shapeMode === 'strategy3-bc' ||
+      shapeMode === 'strategy3-d' ||
       shapeMode === 'core-graph'
     ) {
       updateCursor(mouse, pointerType);
@@ -427,6 +433,8 @@ export function setupInteraction(
       getShapeMode() === 'ab-union' ||
       getShapeMode() === 'ab-hull-debug' ||
       getShapeMode() === 'core-case' ||
+      getShapeMode() === 'strategy3-bc' ||
+      getShapeMode() === 'strategy3-d' ||
       getShapeMode() === 'core-graph'
     ) {
       return;
