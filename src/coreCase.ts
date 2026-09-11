@@ -5,17 +5,18 @@ import { HEXAGON_VERTICES } from './hexagon';
 import {
   abUnionAValues,
   abUnionBValues,
-  abUnionStrictTwoLineSupersetSegments,
-  containsAbUnionLocal,
   createDefaultAbUnionState,
-  renderAbUnion,
   setAbUnionDotValue,
-  type AbUnionDotHandle,
-  type AbUnionLocalLineSegment,
-  type AbUnionLocalRegionVariant,
-  type AbUnionRenderResult,
-  type AbUnionState,
-} from './abUnion';
+} from './ab-union/state';
+import { abUnionStrictTwoLineSupersetSegments, containsAbUnionLocal } from './ab-union/geometry';
+import { renderAbUnion } from './ab-union/render';
+import type {
+  AbUnionDotHandle,
+  AbUnionLocalLineSegment,
+  AbUnionLocalRegionVariant,
+  AbUnionRenderResult,
+  AbUnionState,
+} from './ab-union/types';
 
 const STRICT_GAP = 1e-6;
 const EDGE_AXIS_EPS = 1e-5;

@@ -4,8 +4,8 @@ import {
   abUnionAdjacentBoundaryHit,
   buildAbUnionLocalHexAxisHull,
   containsAbUnionLocal,
-  type AbUnionHexAxisHull,
-} from './abUnion';
+} from './ab-union/geometry';
+import type { AbUnionHexAxisHull } from './ab-union/types';
 
 const SQRT3 = Math.sqrt(3);
 const SAMPLE_STEPS = 240;

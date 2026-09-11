@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Numerical probes for the hexagon union-obstruction question.
 
-The implementation mirrors prompts/20260511abUnion.txt and the browser app's
+The implementation mirrors research/prompts/20260511abUnion.txt and the browser app's
 membership predicate. It intentionally stays NumPy-only so it is easy to run and
 inspect.
 """

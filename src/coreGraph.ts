@@ -4,7 +4,7 @@ import {
   evaluateCoreCaseGraph,
   type CoreCaseGraphSample,
 } from './coreCase';
-import type { AbUnionLocalRegionVariant } from './abUnion';
+import type { AbUnionLocalRegionVariant } from './ab-union/types';
 
 const BOUNDARY_BAND_WIDTH = 0.12;
 const DOMAIN_EPS = 1e-5;

@@ -1,7 +1,7 @@
 # CE Classification Differences
 
 This note compares the C-triangle perimeter classification in
-`notes/20260501generalExplain.md` with the current repository docs and source.
+[20260501generalExplain.md](20260501generalExplain.md) with the current repository docs and source.
 
 ## Classification In `20260501generalExplain.md`
 
@@ -32,7 +32,7 @@ classification.
 
 ## Differences From Current Docs
 
-`MATH.md` does not use the names `CE0`, `CE1`, or `CE2`.
+[MATH.md](../../docs/MATH.md) does not use the names `CE0`, `CE1`, or `CE2`.
 
 Instead, it records the C-triangle by its six radial exit distances:
 

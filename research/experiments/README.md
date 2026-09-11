@@ -1,22 +1,25 @@
 # Union-Obstruction Numerical Experiments
 
 This directory contains a small NumPy experiment for the strict-inequality question in
-`prompts/20260511abUnion.txt`.
+[the AB-union prompt](../prompts/20260511abUnion.txt).
 
 The browser app has a matching `ab union` mode for visual inspection. Use that mode to drag
 the `p_i` points, toggle individual `R_i` regions, test the equality locks, clip regions to
 corner sectors, and inspect sampled red-region witnesses.
 
+Install NumPy with `python3 -m pip install numpy` if needed. Run these commands
+from the repository root.
+
 Run a fast smoke test:
 
 ```bash
-python3 experiments/union_obstruction_experiment.py --res 180 --theta-samples 120 --trials 20
+python3 research/experiments/union_obstruction_experiment.py --res 180 --theta-samples 120 --trials 20
 ```
 
 Run a slower search:
 
 ```bash
-python3 experiments/union_obstruction_experiment.py --res 300 --theta-samples 720 --trials 1000
+python3 research/experiments/union_obstruction_experiment.py --res 300 --theta-samples 720 --trials 1000
 ```
 
 The script reports:

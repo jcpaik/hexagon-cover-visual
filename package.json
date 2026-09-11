@@ -8,7 +8,10 @@
     "build": "tsc && vite build",
     "verify:cunion": "node scripts/verify-cunion.mjs",
     "deploy": "npm run build && surge dist hexagon-cover-visual.surge.sh",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:ab-union": "node scripts/verify-ab-union.mjs",
+    "verify:snapshots": "node scripts/verify-snapshots.mjs",
+    "verify": "npm run verify:ab-union && npm run verify:snapshots && npm run verify:cunion"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

@@ -12,14 +12,22 @@ From that snapshot, `counterexample_cover.py` constructs seven closed equilatera
 - `counterexample_cover.svg`: SVG visualization of the seven optimized triangles
 
 ## How to rerun
+
+Run from the repository root:
+
 ```bash
-python3 counterexample_cover.py
+python3 research/counterexample/counterexample_cover.py
 ```
 
 To verify a different snapshot file:
+
 ```bash
-python3 counterexample_cover.py path/to/snapshot.json
+python3 research/counterexample/counterexample_cover.py path/to/snapshot.json
 ```
+
+The default snapshot and generated JSON/SVG are beside the script, regardless
+of the working directory. An explicit snapshot path is relative to the working
+directory.
 
 ## Current output
 For the retained snapshot, the optimized side lengths are all `< 1`:

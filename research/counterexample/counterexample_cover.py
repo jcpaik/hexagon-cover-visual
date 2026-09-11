@@ -19,9 +19,10 @@ SQRT3 = math.sqrt(3)
 ANGLE_PERIOD = 2 * math.pi / 3
 SEARCH_GRID = 6000
 SEARCH_ITERS = 120
-SVG_PATH = Path("counterexample_cover.svg")
-JSON_PATH = Path("counterexample_cover.json")
-DEFAULT_SNAPSHOT_PATH = Path("counterexample_snapshot.json")
+COUNTEREXAMPLE_DIR = Path(__file__).resolve().parent
+SVG_PATH = COUNTEREXAMPLE_DIR / "counterexample_cover.svg"
+JSON_PATH = COUNTEREXAMPLE_DIR / "counterexample_cover.json"
+DEFAULT_SNAPSHOT_PATH = COUNTEREXAMPLE_DIR / "counterexample_snapshot.json"
 
 COLORS = [
     "#0ea5e9",

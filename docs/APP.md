@@ -10,19 +10,21 @@ This repository contains a Vite + TypeScript web app for exploring unit equilate
 
 ## Main files
 - `index.html`: app shell and canvases
-- `src/main.ts`: app wiring, controls, state snapshots, rendering
+- `src/main.ts`: app bootstrap
+- `src/app/`: app wiring, controls, state snapshots, rendering
+- `src/modes/`: controllers for base shapes, Free, AB Union, Hull Debug, Area, and Core modes
 - `src/interaction.ts`: pointer interaction state machine
 - `src/maps.ts`: admissible-set predicate and one-variable map logic
 - `src/region.ts`: graph canvas and composition plots
 - `src/triangle.ts`: triangle and circle geometry on the left canvas
-- `src/abUnion.ts`: `ab union` region explorer, masks, equality locks, and red-region witness search
+- `src/ab-union/`: AB-region geometry, state, rendering, pointer interaction, masks, and witness search
 - `src/hexagon.ts`: hexagon boundary and main diagonals
 - `src/coords.ts`: math-to-canvas coordinate transforms
 - `src/geometry.ts`: pure geometric helpers
 - `src/symmetricPoints.ts`: D6 point-seed orbit helpers
 - `src/types.ts`: shared types
 - `src/style.css`: layout and control styling
-- `experiments/`: NumPy scripts for professor-facing numerical checks
+- `research/experiments/`: NumPy scripts for professor-facing numerical checks
 
 ## Behavior
 - All geometry is tracked in math coordinates.
@@ -35,7 +37,8 @@ This repository contains a Vite + TypeScript web app for exploring unit equilate
 
 ## `ab union` mode
 
-The `ab union` shape mode ports the standalone `hex_region_app.html` region explorer into the normal app interface.
+The `ab union` shape mode ports the standalone
+[region explorer](../research/legacy/hex_region_app.html) into the normal app interface.
 
 - Use `Move`, `Add`, and `Delete` to edit boundary dots on each edge `e_i=[V_i,V_{i+1}]`.
 - Use `d-mark` and `s-mark` to label intersections between the active C-triangle or C-circle boundary and the fixed skeleton. `D` labels recompute when the geometry changes; `S` labels keep the point created at click time.
