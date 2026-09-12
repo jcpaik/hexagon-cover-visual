@@ -123,6 +123,7 @@ function migrateLegacyStrategy3(parsed: RawControllerSnapshot): Strategy3State {
   }
   state.f.disabledPointIds = sanitizeCoreGraphPointIds(parsed.coreGraphDisabledPointIds, (parsed.version ?? 8) < 10);
   state.f.showDisk = parsed.coreGraphShowDisk === undefined ? true : parsed.coreGraphShowDisk as boolean;
+  state.f.pointConstruction = 'frontier';
   return state;
 }
 

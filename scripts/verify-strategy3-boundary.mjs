@@ -131,7 +131,7 @@ try {
     assert.equal(subset.witness.enabledPointCount, result.witness.points.length - 1);
     assert.deepEqual(subset.witness.points.map((point) => point.point), result.witness.points.map((point) => point.point), 'selection cannot move dependent witnesses');
   }
-  assert.equal(createHash('sha256').update(JSON.stringify(constructionBaseline)).digest('hex'), '5864fdb8a200a3d9f71c94fa7e645c5ab4d622ccf15ec325458f83395328e431', 'AB sampler ownership does not change capacity bounds, diagnostics, witnesses, or fits');
+  assert.equal(createHash('sha256').update(JSON.stringify(constructionBaseline, (key, value) => key === 'pointConstruction' ? undefined : value)).digest('hex'), '5864fdb8a200a3d9f71c94fa7e645c5ab4d622ccf15ec325458f83395328e431', 'AB sampler ownership does not change capacity bounds, diagnostics, witnesses, or fits');
 
   const bothRole = { index: 0, a: 0.2, b: 0.2, restriction: 'both', criticality: 'any', requiredInteriorPoints: [] };
   const bothSources = sampleRestrictedAbSources(bothRole, 'full').triangles;
@@ -176,8 +176,19 @@ try {
   const fDots = dots(fixtures[4][1]);
   const f = evaluateStrategy3Boundary('f', fDots);
   assert.deepEqual(f.witness, evaluateNinePoint(0.55, 0.58), 'F uses the unchanged canonical nine-point evaluator');
+  const newtonF = evaluateStrategy3Boundary('f', fDots, [], 'newton');
+  assert.deepEqual(newtonF.witness, evaluateNinePoint(0.55, 0.58, undefined, 'newton'), 'F forwards the Newton selector');
+  assert.deepEqual(newtonF.conditions, f.conditions, 'the selector does not alter source checks');
+  assert.deepEqual(newtonF.capacities, f.capacities, 'the selector does not alter capacities');
+  const newtonSubset = evaluateStrategy3Boundary('f', fDots, ['Q-'], 'newton');
+  assert.equal(newtonSubset.witness.enabledPointCount, 8);
+  assert.equal(newtonSubset.witness.points.find((point) => point.symbol === 'A').enabled, false);
+  const movedFDots = structuredClone(fDots);
+  movedFDots[4].left = movedFDots[4].right = 0.57;
+  assert.notDeepEqual(evaluateStrategy3Boundary('f', movedFDots, [], 'newton').witness.points, newtonF.witness.points, 'critical handle movement recomputes inner points');
   fDots[0].left = fDots[0].right = 0.1;
   const invalidF = evaluateStrategy3Boundary('f', fDots);
+  assert.deepEqual(evaluateStrategy3Boundary('f', fDots, [], 'newton').witness.points, newtonF.witness.points, 'noncritical handles do not move Newton points');
   assert.equal(invalidF.conditions.find((condition) => condition.id === 'common-pair').ok, false);
   assert.deepEqual(invalidF.witness.points, f.witness.points, 'noncritical F handles change context without inventing new canonical points');
   const invalidBCDots = dots(fixtures[0][1]);

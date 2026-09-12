@@ -121,12 +121,42 @@ domain is
 $$
 0<a,b<1,\qquad a+b>1,\qquad a^2+ab+b^2<1.
 $$
-The initial boundary positions give $(a,b)=(.55,.58)$. The nine points are
+The initial boundary positions give $(a,b)=(.55,.58)$. The **Exact frontier**
+selection retains the original nine points
 $$
 K_F=\{(1-c_*)V_i:0\le i\le5\}\cup\{Q_-,Q_0,Q_+\},
 \qquad c_*=c_{\max}(1-b,1-a).
 $$
 The frontier witnesses use the [analytic first-root formulas][f-formulas].
+They are not Newton approximations: $Q_-$ and $Q_+$ are first circle
+intersections, while $Q_0=\Psi_4(J)$ is the common line junction.
+
+New sessions default to **Newton inner A, B, C**. This selection replaces only
+the last three points by the paper's [Newton inner witnesses][newton]:
+$$
+K_N=\{(1-c_*)V_i:0\le i\le5\}\cup\{A,B,C\},\qquad
+A\in(Q_0,Q_-),\quad B=Q_0,\quad C\in(Q_0,Q_+).
+$$
+In the same corner chart, put $h=\sqrt3/2$, $\rho=a^2+ab+b^2$,
+$D=\sqrt{4\rho-3}$, and $\lambda_*=\mu_*=8h\rho/(3(D+3))$.
+With the unchanged frontier coefficients $\alpha,\beta,\gamma,\delta$, use
+$$
+g_-(x)=\tfrac34x^2-3(\alpha+b\beta)x+3b^2-3b+2,\qquad
+g_+(x)=\tfrac34x^2-3(\delta+a\gamma)x+3a^2-3a+2.
+$$
+The implementation takes **exactly one** Newton step from the junction:
+$$
+\widehat\lambda=\lambda_*-\frac{g_-(\lambda_*)}{g_-'(\lambda_*)},\qquad
+\widehat\mu=\mu_*-\frac{g_+(\mu_*)}{g_+'(\mu_*)},
+$$
+then sets $A=\Psi_4(b-\beta\widehat\lambda,\alpha\widehat\lambda)$ and
+$C=\Psi_4(\delta\widehat\mu,a-\gamma\widehat\mu)$.
+This is equivalent to the paper's rescaled step for $\widetilde g(x)=g(hx)$;
+it is neither an iterative root solve nor a midpoint replacement.
+The table and canvas label these points **A, B, C**, never $Q_-,Q_0,Q_+$.
+Saved selection IDs remain `Q-`, `Q0`, `Q+` as stable slots; a disabled `Q-`
+slot disables $A$ in Newton mode and $Q_-$ in frontier mode.
+
 The two handles adjacent to $V_4$ determine these canonical nine points. The
 other four handles change their source regions and the Case F/common-pair
 checks; they do not independently change the nine-point formula.
@@ -136,7 +166,14 @@ one actual supercritical row. The interface checks the selected critical row
 and common-pair lower demands while keeping those checks separate from
 sampled-source evidence. The optional disk of radius
 $(\sqrt3/2)(1-c_*)$ lies inside the full radial hexagon and is a comparison
-overlay, not an additional witness. The former F surface, heatmap, slice, and
+overlay, not an additional witness. In Newton mode the app still fits the
+**six radial points plus A, B, C**, not a separately constrained disk fit.
+Thus the paper's disk reduction satisfies
+$\widehat K=\operatorname{conv}(\mathcal D_\eta\cup\{A,B,C\})
+\subseteq\operatorname{conv}(K_N)\subseteq\operatorname{conv}(K_F)$.
+Disabling radial witnesses removes the guarantee that the selected hull
+contains the comparison disk. The displayed side always uses only enabled
+points; numerical fitting is not an exact certificate. The former F surface, heatmap, slice, and
 sampling controls have been removed. The separate exploratory Core Case mode
 retains its existing behavior.
 
@@ -144,9 +181,13 @@ retains its existing behavior.
 
 Controller snapshots use version 11. They store all BC/D boundary layouts,
 the active layouts, F's boundary inputs, witness selections, each mode's
-region visibility, and F's disk visibility. Regions and witness coordinates are recomputed on loading. Free
+region visibility, F's disk visibility, and F's `pointConstruction`
+(`newton` or `frontier`). Regions and witness coordinates are recomputed on loading. Free
 snapshots retain their own version. Older version-11 snapshots without region
-visibility flags load with all six regions visible.
+visibility flags load with all six regions visible. Existing version-11 F
+snapshots without `pointConstruction`, and migrated versions 8–10, load in
+**frontier** mode to preserve their original point coordinates. New sessions
+use Newton mode; both explicit selections round-trip without changing it.
 
 Controller versions 8–10 still load. The former `core-graph` mode becomes
 `strategy3-f`. Valid saved F parameters are preserved by setting
@@ -167,3 +208,5 @@ are discarded. Other modes' saved-state behavior is preserved.
 [bc-d]: https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/arrange/paper_draft/fixed_witness/06_fixed_witness_body.tex
 [f-formulas]: https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/proof/3XXX_CE0/31XX_Nplus1/310X_all_Vd0/3105X_self_contained_direct_Vd0_nine_point/31053_direct_asymmetric_witness_forcing.md
 [f-theorem]: https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/proof/3XXX_CE0/31XX_Nplus1/310X_all_Vd0/3105X_self_contained_direct_Vd0_nine_point/31058_center_independent_direct_nine_point_obstruction.md
+
+[newton]: https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/arrange/paper_draft/E_zero_gap_nine_point_optimization.tex#L574-L628

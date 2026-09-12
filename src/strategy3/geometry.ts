@@ -26,8 +26,12 @@ export const DEFAULT_BC_PARAMETERS: BCParameters = { left: 0.5, right: 0.65, rad
 export const DEFAULT_D_PARAMETERS: DParameters = { a: 0.2, epsilon: 0.4, beta: 0.5 };
 export const NINE_POINT_IDS = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'Q-', 'Q0', 'Q+'] as const;
 
+export type NinePointConstruction = 'frontier' | 'newton';
+
 export interface WitnessPoint {
   id: string;
+  // Selection IDs stay stable across constructions; symbols name the plotted points.
+  symbol?: string;
   label: string;
   point: Point | null;
   enabled: boolean;
@@ -76,6 +80,7 @@ export interface WitnessEvaluation {
 }
 
 export interface NinePointEvaluation {
+  pointConstruction: NinePointConstruction;
   a: number;
   b: number;
   domainOk: boolean;
@@ -278,9 +283,12 @@ export function deriveD(triangles: readonly FreeTriangleState[], disabledIds?: P
 }
 
 // 31053, equations (7)–(19), in the chart V4 + u(V5−V4) + v(V3−V4).
-// These are the selected first roots of the exact frontier, with no sampled
-// boundary search, nearest-point selection, or historical Core fallback.
-export function evaluateNinePoint(a: number, b: number, enabledIds?: PointIds): NinePointEvaluation {
+// The frontier mode retains the selected first roots. Newton mode uses exactly
+// one tangent step from their common junction, as in the paper's Appendix E
+// (Newton inner reduction); neither mode samples or uses a Core fallback.
+export function evaluateNinePoint(
+  a: number, b: number, enabledIds?: PointIds, pointConstruction: NinePointConstruction = 'frontier',
+): NinePointEvaluation {
   const enabled = enabledIds === undefined ? new Set<string>(NINE_POINT_IDS) : asSet(enabledIds);
   const disabled = new Set(NINE_POINT_IDS.filter((id) => !enabled.has(id)));
   const rho = a * a + a * b + b * b;
@@ -300,8 +308,17 @@ export function evaluateNinePoint(a: number, b: number, enabledIds?: PointIds): 
     const beta = H * (b - a + (a + b) * d) / (2 * rho);
     const gamma = H * (-b + a + (a + b) * d) / (2 * rho);
     const delta = H * (2 * b + a - a * d) / (2 * rho);
-    const lambda = 2 * (alpha + b * beta) - (2 / 3) * Math.sqrt(9 * (alpha + b * beta) ** 2 - 9 * b * b + 9 * b - 6);
-    const mu = 2 * (delta + a * gamma) - (2 / 3) * Math.sqrt(9 * (delta + a * gamma) ** 2 - 9 * a * a + 9 * a - 6);
+    const junction = 8 * H * rho / (3 * (d + 3));
+    const newtonStep = (s: number, t: number): number => {
+      // g(x) = 3x²/4 − 3sx + 3t² − 3t + 2. This unscaled step
+      // equals H times the paper's step for g(Hξ) at ξ = junction/H.
+      const value = 0.75 * junction ** 2 - 3 * s * junction + 3 * t * t - 3 * t + 2;
+      return junction - value / (1.5 * junction - 3 * s);
+    };
+    const lambda = pointConstruction === 'newton' ? newtonStep(alpha + b * beta, b)
+      : 2 * (alpha + b * beta) - (2 / 3) * Math.sqrt(9 * (alpha + b * beta) ** 2 - 9 * b * b + 9 * b - 6);
+    const mu = pointConstruction === 'newton' ? newtonStep(delta + a * gamma, a)
+      : 2 * (delta + a * gamma) - (2 / 3) * Math.sqrt(9 * (delta + a * gamma) ** 2 - 9 * a * a + 9 * a - 6);
     const global = (u: number, v: number): Point => ({
       x: HEXAGON_VERTICES[4].x + u * (HEXAGON_VERTICES[5].x - HEXAGON_VERTICES[4].x) + v * (HEXAGON_VERTICES[3].x - HEXAGON_VERTICES[4].x),
       y: HEXAGON_VERTICES[4].y + u * (HEXAGON_VERTICES[5].y - HEXAGON_VERTICES[4].y) + v * (HEXAGON_VERTICES[3].y - HEXAGON_VERTICES[4].y),
@@ -310,10 +327,17 @@ export function evaluateNinePoint(a: number, b: number, enabledIds?: PointIds): 
     coordinates.set('Q0', global((2 * b + a - a * d) / (d + 3), (b + 2 * a - b * d) / (d + 3)));
     coordinates.set('Q+', global(delta * mu, a - gamma * mu));
   }
-  const points = NINE_POINT_IDS.map((id) => witness(id, id.startsWith('D') ? `common radial point on r${id.slice(1)}` : `exact AB frontier ${id}`, coordinates.get(id) ?? null, disabled));
+  const innerSymbols: Record<string, string> = { 'Q-': 'A', Q0: 'B', 'Q+': 'C' };
+  const points = NINE_POINT_IDS.map((id) => {
+    const symbol = pointConstruction === 'newton' ? innerSymbols[id] : undefined;
+    const label = id.startsWith('D') ? `common radial point on r${id.slice(1)}`
+      : symbol ? `Newton inner point ${symbol}${id === 'Q0' ? ' = Q0' : ''}` : `exact AB frontier ${id}`;
+    const point = witness(id, label, coordinates.get(id) ?? null, disabled);
+    return symbol ? { ...point, symbol } : point;
+  });
   const fitted = fitWitnesses(points);
   const missing = points.filter((point) => point.enabled && point.point === null).map((point) => point.id);
   const status = !domainOk ? domainStatus : fitted.enabledPointCount === 0 ? 'no points selected'
     : missing.length > 0 ? `unavailable at numerical precision: ${missing.join(', ')}` : 'ready';
-  return { a, b, domainOk, domainStatus, cStar, diskRadius, circles, points, ...fitted, strictGap: a + b - 1, localRegionVariant: 'exact', status };
+  return { pointConstruction, a, b, domainOk, domainStatus, cStar, diskRadius, circles, points, ...fitted, strictGap: a + b - 1, localRegionVariant: 'exact', status };
 }

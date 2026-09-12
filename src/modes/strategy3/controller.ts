@@ -130,7 +130,11 @@ export function createStrategy3Controller(deps: Dependencies) {
         </div>`}
         <p class="free-small-status">Drag the ${count} white boundary handles or edit their edge positions below. Witness coordinates update automatically. Click a vertex to highlight its region.</p>
         <p class="free-small-status">Shared dots specify lower demands. Gap endpoints fix the actual adjacent reaches. Invalid case configurations remain editable.</p>
-        ${active === 'f' ? '<p class="free-small-status">The reaches at V4 determine the canonical nine points. The other handles change the regions and Case F checks.</p>' : ''}
+        ${active === 'f' ? `<p class="free-small-status">The reaches at V4 determine the nine points. The other handles change the regions and Case F checks.</p>
+          <fieldset class="free-toolbar"><legend>F witness construction</legend>
+            <label><input type="radio" name="strategy3-construction" data-strategy3-construction value="newton"/>Newton inner A, B, C</label>
+            <label><input type="radio" name="strategy3-construction" data-strategy3-construction value="frontier"/>Exact frontier Q−, Q0, Q+</label>
+          </fieldset>` : ''}
         <div class="ab-union-toolbar" aria-label="AB region visibility"><span>Visible AB sets</span>
           ${AB_UNION_REGION_COLORS.map((color, index) => `<label style="color:${color}"><input type="checkbox" data-ab-region-visible="${index}" aria-label="Show AB set at V${index}"/>V${index}</label>`).join('')}
         </div>
@@ -154,6 +158,9 @@ export function createStrategy3Controller(deps: Dependencies) {
     }
     const disk = deps.controls.querySelector<HTMLInputElement>('[data-strategy3-disk]');
     if (disk) disk.checked = state.f.showDisk;
+    for (const input of deps.controls.querySelectorAll<HTMLInputElement>('[data-strategy3-construction]')) {
+      input.checked = input.value === state.f.pointConstruction;
+    }
     for (const input of deps.controls.querySelectorAll<HTMLInputElement>('[data-ab-region-visible]')) {
       input.checked = state[active].regionVisible[Number(input.dataset.abRegionVisible)];
     }
@@ -161,6 +168,10 @@ export function createStrategy3Controller(deps: Dependencies) {
     const geometryOk = 'geometryApplicable' in witness ? witness.geometryApplicable : witness.domainOk;
     const caseOk = sample.conditions.filter((condition) => condition.group === 'source').every((condition) => condition.ok);
     deps.controls.querySelector<HTMLElement>('[data-strategy3-readouts]')!.innerHTML = `
+      ${active === 'f' ? `<p class="free-small-status" data-strategy3-construction-note>${state.f.pointConstruction === 'newton'
+        ? 'Six radial points + A, B = Q0, C. One Newton step: A ∈ (Q0,Q−), C ∈ (Q0,Q+); these are not the circle intersections.'
+        : 'Six radial points + exact frontier Q−, Q0, Q+. Q− and Q+ are the selected first circle intersections.'}</p>
+        <p class="free-small-status">The fit uses only enabled points. The disk is a comparison overlay, not a separate fitting constraint.</p>` : ''}
       <div class="ab-union-readout"><span>${witness.points.every((point) => point.enabled) ? 'Enclosing side' : 'Subset enclosing side'}</span><strong data-strategy3-side>${numberText(witness.side)}</strong>
         <span>Boundary handles</span><strong data-strategy3-handle-count>${count}</strong>
         <span>Enabled witnesses</span><strong>${witness.enabledPointCount}</strong>
@@ -169,7 +180,7 @@ export function createStrategy3Controller(deps: Dependencies) {
         ${active === 'd' && 'theoremApplicable' in witness ? `<span>D geometric theorem</span><strong data-strategy3-theorem-status>${witness.theoremApplicable ? 'Applicable to the full witness set' : 'Not asserted for this selection'}</strong>` : ''}
         <span>Status</span><strong>${escapeHtml(witness.status)}</strong></div>`;
     deps.controls.querySelector<HTMLElement>('[data-strategy3-points]')!.innerHTML = witness.points.map((point) => `
-      <label><input type="checkbox" data-strategy3-point="${point.id}"${point.enabled ? ' checked' : ''}/>${escapeHtml(point.id)}: ${point.point ? `(${numberText(point.point.x)}, ${numberText(point.point.y)})` : 'undefined'}</label>`).join('');
+      <label title="${escapeHtml(point.label)}"><input type="checkbox" data-strategy3-point="${point.id}" aria-label="Show ${escapeHtml(point.symbol ?? point.id)}"${point.enabled ? ' checked' : ''}/>${escapeHtml(point.symbol ?? point.id)}: ${point.point ? `(${numberText(point.point.x)}, ${numberText(point.point.y)})` : 'undefined'}</label>`).join('');
     deps.controls.querySelector<HTMLElement>('[data-strategy3-conditions]')!.innerHTML = sample.conditions.map((condition) => `
       <div class="free-small-status ${condition.ok ? 'ab-union-ok' : 'ab-union-bad'}">${condition.ok ? 'PASS' : 'FAIL'}: ${escapeHtml(condition.label)}</div>`).join('');
     deps.controls.querySelector<HTMLElement>('[data-strategy3-reaches]')!.innerHTML = `
@@ -183,9 +194,10 @@ export function createStrategy3Controller(deps: Dependencies) {
     const active = mode();
     if (!active) return;
     const adapter = adapterFor(active);
-    const key = JSON.stringify([adapter.edgeDots, state[active].disabledPointIds]);
+    const construction = active === 'f' ? state.f.pointConstruction : 'frontier';
+    const key = JSON.stringify([adapter.edgeDots, state[active].disabledPointIds, construction]);
     if (evaluations[active]?.key !== key) {
-      evaluations[active] = { key, sample: evaluateStrategy3Boundary(active, adapter.edgeDots, state[active].disabledPointIds) };
+      evaluations[active] = { key, sample: evaluateStrategy3Boundary(active, adapter.edgeDots, state[active].disabledPointIds, construction) };
     }
     const sample = evaluations[active]!.sample;
     deps.ctx.clearRect(0, 0, config.canvasSize, config.canvasSize);
@@ -242,7 +254,11 @@ export function createStrategy3Controller(deps: Dependencies) {
     const active = mode();
     const input = event.target;
     if (!active || !(input instanceof HTMLInputElement)) return;
-    if (input.dataset.abRegionVisible !== undefined) {
+    if (active === 'f' && input.dataset.strategy3Construction !== undefined) {
+      if (input.value !== 'frontier' && input.value !== 'newton') return;
+      state.f.pointConstruction = input.value;
+      deps.render();
+    } else if (input.dataset.abRegionVisible !== undefined) {
       state[active].regionVisible[Number(input.dataset.abRegionVisible)] = input.checked;
       deps.render();
     } else if (input.dataset.strategy3Point) {
