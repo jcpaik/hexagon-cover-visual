@@ -141,9 +141,12 @@ checkboxes control drawing only; underlying masks, witness coordinates, and
 case checks stay unchanged. Visibility defaults to all six regions and is
 saved independently for BC, D, and F. Within BC or D, the same visibility
 choices apply to both boundary layouts.
+Visible regions have colored fills and outlines, including equality families
+whose admissible sources occupy a lower-dimensional parameter set.
 
 Boundary movement preserves case conditions and a verified source triangle in
-every restricted AB family. **Stop that dot** keeps other handles fixed;
+every restricted AB family. **Stop that dot** moves sum-linked handles together
+and keeps unrelated handles fixed;
 **Adjust neighboring dots** propagates linked boundary corrections and limits
 movement when source or construction constraints block it. Mouse, touch, and
 numeric edits share these rules. Point checkboxes select witnesses for the hull and numerical
@@ -151,10 +154,19 @@ minimum enclosing triangle; subset fits are labeled separately. The old
 parameter/triangle-source editors and F surface, heatmap, sampling, and slice
 controls have been removed. F retains its optional comparison disk.
 
+Each vertex has mutually exclusive boundary-sum checkboxes: hold the current
+$a_i+b_i$, set it to exactly $1$, or set it to $1+\varepsilon$. Sum ε is
+editable and separate from D's derived ε. Locks and ε are saved per layout.
+Changes attempt a coordinated feasible adjustment and roll back together if
+none is found. Actual-source criticality remains fixed by the paper case;
+incompatible locks are unavailable with an explanation.
+
 Controller snapshots use version 11, storing boundary layouts, region
-visibility, witness selections, and the shared movement preference (default:
+visibility, witness selections, sum locks, and the shared movement preference (default:
 stop). Loading automatically resets invalid layouts to their feasible presets
-and reports which boundaries changed, preserving other settings.
+and clears their locks, reporting which boundaries changed. On feasible
+layouts, inconsistent locks are cleared while valid locks and positions remain.
+Earlier snapshots without sum settings load unlocked.
 Earlier version-11 snapshots without
 visibility flags load with all regions visible. Versions 8–10 load with a migration notice: old F parameters and
 selections are preserved where representable, while independent BC/D

@@ -37,6 +37,7 @@ function segmentInterval(triangle, start, end) {
 try {
   const { evaluateStrategy3Boundary } = await server.ssrLoadModule('/src/strategy3/boundary.ts');
   const { sampleRestrictedAbSources, abUnionRegionKey } = await server.ssrLoadModule('/src/ab-union/regions.ts');
+  const { isRestrictedAbSource, SOURCE_INTERIOR_MARGIN } = await server.ssrLoadModule('/src/ab-union/feasibility.ts');
   const { containsAbUnionLocal } = await server.ssrLoadModule('/src/ab-union/geometry.ts');
   const { ownRayCapacity, forwardNeighborCapacity, backwardNeighborCapacity, algorithm2CStar } = await server.ssrLoadModule('/src/radialCapacity.ts');
   const { evaluateNinePoint } = await server.ssrLoadModule('/src/strategy3/geometry.ts');
@@ -74,14 +75,9 @@ try {
     ['d', [[0.68, 0.7], 0.74, 0.65, 0.56, 0.47, [0.2, 0.8]]],
     ['f', [0.528, 0.502, 0.476, 0.45, 0.58, 0.554]],
   ];
-  const expectedSourceCounts = [
-    [1309, 897, 821, 786, 782, 816], [280, 705, 786, 782, 816, 1321],
-    [8, 120, 859, 905, 983, 1044], [6, 378, 1318, 1205, 1168, 1816],
-    [514, 509, 506, 510, 90, 547],
-  ];
   const constructionBaseline = [];
   let sourceCount = 0;
-  for (const [fixtureIndex, [mode, values]] of fixtures.entries()) {
+  for (const [mode, values] of fixtures) {
     const edgeDots = dots(values);
     const result = evaluateStrategy3Boundary(mode, edgeDots);
     constructionBaseline.push({ capacities: result.capacities, conditions: result.conditions, witness: result.witness });
@@ -100,14 +96,16 @@ try {
       close(role.b, edgeDots[index].left, 'forward boundary demand');
       assert.equal(role.restriction, edgeDots[(index + 5) % 6].split ? edgeDots[index].split ? 'both' : 'in' : edgeDots[index].split ? 'out' : 'ordinary');
       const { triangles } = sampleRestrictedAbSources(role, 'full');
-      assert.equal(triangles.length, expectedSourceCounts[fixtureIndex][index], 'moving the sampler preserves source counts');
       assert.ok(triangles.length > 0, `${mode} V${index} has restricted sources`);
       assert.equal(sampleRestrictedAbSources(role, 'full').triangles, triangles, 'unchanged source family is cached');
+      sampleRestrictedAbSources({ ...role, a: 1 }, 'full');
+      assert.deepEqual(sampleRestrictedAbSources(role, 'full').triangles, triangles, 'source sampling is deterministic after cache replacement');
       sourceCount += triangles.length;
       for (const triangle of triangles) {
+        assert.ok(isRestrictedAbSource(role, triangle), 'each plotted triangle satisfies the complete source definition');
         triangle.forEach((point, side) => {
           close(Math.hypot(point.x - triangle[(side + 1) % 3].x, point.y - triangle[(side + 1) % 3].y), 1, 'source side length');
-          assert.ok(cross(point, triangle[(side + 1) % 3], vertices[index]) > 1e-7, 'assigned vertex is strictly inside');
+          assert.ok(cross(point, triangle[(side + 1) % 3], vertices[index]) >= SOURCE_INTERIOR_MARGIN - 1e-14, 'assigned vertex meets the source interior margin');
         });
         const a = segmentInterval(triangle, vertices[index], vertices[(index + 5) % 6])[1];
         const b = segmentInterval(triangle, vertices[index], vertices[(index + 1) % 6])[1];
@@ -116,7 +114,7 @@ try {
         if (role.restriction === 'out' || role.restriction === 'both') close(b, role.b, 'exact forward reach', 2e-5);
         if (role.criticality === 'non-supercritical') assert.ok(a + b <= 1 + 1e-9);
         if (role.criticality === 'supercritical') assert.ok(a + b > 1);
-        for (const requiredPoint of role.requiredInteriorPoints) triangle.forEach((point, side) => assert.ok(cross(point, triangle[(side + 1) % 3], requiredPoint) > 1e-7, 'source strictly contains every required interior point'));
+        for (const requiredPoint of role.requiredInteriorPoints) triangle.forEach((point, side) => assert.ok(cross(point, triangle[(side + 1) % 3], requiredPoint) >= SOURCE_INTERIOR_MARGIN - 1e-14, 'source strictly contains every required interior point'));
         for (const [ray, bound] of [[index, ownRayCapacity(role.a, role.b)], [(index + 1) % 6, forwardNeighborCapacity(role.a, role.b)], [(index + 5) % 6, backwardNeighborCapacity(role.a, role.b)]]) {
           const interval = segmentInterval(triangle, vertices[ray], origin);
           if (interval && interval[1] - interval[0] > 1e-8) {
@@ -152,7 +150,7 @@ try {
   const interiorSources = sampleRestrictedAbSources(interiorRole, 'full').triangles;
   assert.ok(interiorSources.length > 0 && interiorSources.length < outwardSources.triangles.length, 'generic interior constraints filter the source family');
   for (const triangle of interiorSources) for (const required of requiredInteriorPoints) {
-    assert.ok(triangle.every((point, side) => cross(point, triangle[(side + 1) % 3], required) > 1e-7), 'all generic required points are strictly contained');
+    assert.ok(triangle.every((point, side) => cross(point, triangle[(side + 1) % 3], required) >= SOURCE_INTERIOR_MARGIN - 1e-14), 'all generic required points are strictly contained');
   }
   assert.equal(sampleRestrictedAbSources({ ...outwardRole, requiredInteriorPoints: [{ x: 3, y: 3 }] }, 'full').triangles.length, 0, 'changed interior constraints cannot return a stale family');
   const reflectedRole = { ...outwardRole, a: outwardRole.b, b: outwardRole.a, restriction: 'in' };

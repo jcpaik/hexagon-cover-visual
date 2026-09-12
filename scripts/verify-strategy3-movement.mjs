@@ -33,9 +33,11 @@ const setDot = (dots, dot, value) => {
 
 try {
   const { createDefaultStrategy3State } = await server.ssrLoadModule('/src/strategy3/state.ts');
-  const { checkStrategy3Feasibility: check, projectStrategy3Move: move } = await server.ssrLoadModule('/src/strategy3/feasibility.ts');
+  const { checkStrategy3Feasibility: check, projectStrategy3Move: move, projectStrategy3SumChange: activate, STRATEGY3_SUM_TOLERANCE } = await server.ssrLoadModule('/src/strategy3/feasibility.ts');
   const { strategy3BoundaryInputs } = await server.ssrLoadModule('/src/strategy3/boundary.ts');
   const { isRestrictedAbSource } = await server.ssrLoadModule('/src/ab-union/feasibility.ts');
+  const { createDefaultAbUnionState } = await server.ssrLoadModule('/src/ab-union/state.ts');
+  const { renderAbUnionBoundaryControls } = await server.ssrLoadModule('/src/ab-union/render.ts');
   const { buildBC, DEFAULT_BC_PARAMETERS, constructNinePoint } = await server.ssrLoadModule('/src/strategy3/geometry.ts');
   assert.ok(fitTrapInstalled);
   assert.throws(() => buildBC(DEFAULT_BC_PARAMETERS), /Enclosure fitting is forbidden/, 'the trap rejects a full evaluator');
@@ -63,6 +65,26 @@ try {
     validate(mode, dots, feasibility);
     assert.strictEqual(check(mode, copy(dots)), feasibility, `${mode}/${layout} caches coordinate-equivalent input`);
   }
+
+  const nearEndpoint = move('bc', state.bc.layouts.seven, { edge: 0, role: 'left' }, 1e-8, 'stop');
+  assert.equal(nearEndpoint.acceptedValue, 1e-8, 'a valid strict endpoint below legacy AB snapping tolerance is accepted');
+  validate('bc', nearEndpoint.edgeDots, nearEndpoint.feasibility);
+  const boundaryAdapter = createDefaultAbUnionState();
+  boundaryAdapter.edgeDots = nearEndpoint.edgeDots;
+  boundaryAdapter.fMarks = [
+    { id: 'F1', point: { x: 0, y: 0 } },
+    { id: 'F2', point: { x: 0.1, y: 0 } },
+    { id: 'F3', point: { x: 0, y: 0.1 } },
+  ];
+  const beforeDrawing = structuredClone(boundaryAdapter);
+  const drawingContext = {
+    save() {}, restore() {}, beginPath() {}, arc() {}, fill() {}, stroke() {}, fillText() {},
+  };
+  const boundaryReadouts = renderAbUnionBoundaryControls(drawingContext, boundaryAdapter, { readOnly: true, showFMarkTriangle: false });
+  assert.deepEqual(boundaryAdapter, beforeDrawing, 'draw-only boundary controls cannot normalize or mutate Strategy 3 state');
+  assert.equal(boundaryReadouts.edgeRows[0].left, 1e-8, 'draw-only readouts preserve the unsnapped position');
+  assert.equal(boundaryReadouts.fMarkTriangleSide, null, 'boundary drawing does not fit a triangle even with three marks');
+  validate('bc', boundaryAdapter.edgeDots, check('bc', boundaryAdapter.edgeDots));
 
   const stop = move('bc', state.bc.layouts.seven, { edge: 3, role: 'shared' }, 0.7, 'stop');
   validate('bc', stop.edgeDots, stop.feasibility);
@@ -137,6 +159,105 @@ try {
     assert.ok(result.blockedReason);
   }
 
+  const targets = (...entries) => {
+    const sums = Array(6).fill(null);
+    entries.forEach(([index, value]) => { sums[index] = value; });
+    return sums;
+  };
+  const currentSums = (dots) => dots.map((edge, index) => 1 - dots[(index + 5) % 6].right + edge.left);
+  function validateLocks(mode, dots, sums, feasibility) {
+    validate(mode, dots, feasibility);
+    assert.ok(check(mode, dots, sums).ok);
+    const actual = currentSums(dots);
+    sums.forEach((sum, index) => { if (sum !== null) close(actual[index], sum, `locked row ${index}`, STRATEGY3_SUM_TOLERANCE); });
+  }
+  const bcDots = state.bc.layouts.seven;
+  const baseGeometry = check('bc', bcDots);
+  assert.equal(check('bc', bcDots, targets([3, 1])).ok, false, 'geometry alone does not satisfy a new lock');
+  assert.strictEqual(check('bc', bcDots), baseGeometry, 'a lock mismatch cannot contaminate the geometry cache');
+  const frozenTargets = targets([3, currentSums(bcDots)[3]]);
+  const frozen = activate('bc', bcDots, frozenTargets);
+  assert.ok(frozen.ok);
+  assert.deepEqual(frozen.edgeDots, bcDots, 'freezing a current sum does not move handles');
+  const frozenMove = move('bc', frozen.edgeDots, { edge: 3, role: 'shared' }, 0.53, 'stop', frozenTargets);
+  validateLocks('bc', frozenMove.edgeDots, frozenTargets, frozenMove.feasibility);
+  close(frozenMove.acceptedValue, 0.53, 'current lock allows linked movement');
+  close(frozenMove.edgeDots[2].left - frozen.edgeDots[2].left, 0.025, 'current lock partner follows by the same displacement');
+  assert.equal(frozenMove.adjustedNeighbors, 1);
+  for (const index of [0, 1, 4, 5]) assert.deepEqual(frozenMove.edgeDots[index], bcDots[index], 'Stop leaves unrelated equality components fixed');
+  close(frozenTargets[3], currentSums(bcDots)[3], 'current target is not recaptured during dragging');
+
+  const oneTargets = targets([3, 1]);
+  const one = activate('bc', bcDots, oneTargets);
+  assert.ok(one.ok);
+  close(one.edgeDots[2].left, 0.53, 'activation chooses balanced nearest-current handles');
+  close(one.edgeDots[3].left, 0.53, 'activation applies exact one');
+  validateLocks('bc', one.edgeDots, oneTargets, one.feasibility);
+  assert.deepEqual(activate('bc', bcDots, oneTargets).edgeDots, one.edgeDots, 'activation is deterministic');
+  const oneStop = move('bc', one.edgeDots, { edge: 3, role: 'shared' }, 0.7, 'stop', oneTargets);
+  close(oneStop.acceptedValue, bcDots[1].left, 'linked Stop clamps at the next unrelated component', 1e-6);
+  assert.equal(oneStop.adjustedNeighbors, 1);
+  assert.deepEqual(oneStop.edgeDots[1], bcDots[1]);
+  validateLocks('bc', oneStop.edgeDots, oneTargets, oneStop.feasibility);
+  const onePush = move('bc', one.edgeDots, { edge: 3, role: 'shared' }, 0.7, 'adjust-neighbors', oneTargets);
+  close(onePush.acceptedValue, 0.7, 'coupled movement may push beyond the linked component');
+  assert.ok(onePush.adjustedNeighbors > oneStop.adjustedNeighbors);
+  validateLocks('bc', onePush.edgeDots, oneTargets, onePush.feasibility);
+
+  const extraTargets = targets([2, 1], [3, 1]);
+  const extra = activate('bc', one.edgeDots, extraTargets);
+  assert.ok(extra.ok, extra.reason);
+  validateLocks('bc', extra.edgeDots, extraTargets, extra.feasibility);
+  const dOne = activate('d', state.d.layouts.seven, targets([1, 1]));
+  assert.ok(dOne.ok, dOne.reason);
+  validateLocks('d', dOne.edgeDots, targets([1, 1]), dOne.feasibility);
+  assert.equal(strategy3BoundaryInputs('d', dOne.edgeDots).roles[1].criticality, 'supercritical', 'selected sum one does not change D actual source criticality');
+  const fOne = activate('f', state.f.edgeDots, targets([4, 1]));
+  assert.equal(fOne.ok, false, 'F still requires selected critical sum strictly above one');
+  assert.deepEqual(fOne.edgeDots, state.f.edgeDots);
+  const fEpsilon = activate('f', state.f.edgeDots, targets([4, 1.05]));
+  assert.ok(fEpsilon.ok, fEpsilon.reason);
+  validateLocks('f', fEpsilon.edgeDots, targets([4, 1.05]), fEpsilon.feasibility);
+  const fUpdated = activate('f', fEpsilon.edgeDots, targets([4, 1.06]));
+  assert.ok(fUpdated.ok, fUpdated.reason);
+  validateLocks('f', fUpdated.edgeDots, targets([4, 1.06]), fUpdated.feasibility);
+
+  const twoEpsilonRows = targets([0, 1], [3, 1]);
+  const epsilonZero = activate('bc', bcDots, twoEpsilonRows);
+  assert.ok(epsilonZero.ok, epsilonZero.reason);
+  const savedEpsilonDots = copy(epsilonZero.edgeDots), savedTargets = [...twoEpsilonRows];
+  const epsilonPositive = activate('bc', epsilonZero.edgeDots, targets([0, 1.05], [3, 1.05]));
+  assert.equal(epsilonPositive.ok, false, 'epsilon change cannot override a nonsupercritical role');
+  assert.deepEqual(epsilonPositive.edgeDots, savedEpsilonDots, 'failed multi-row epsilon proposal returns the entire unchanged layout');
+  assert.deepEqual(epsilonZero.edgeDots, savedEpsilonDots);
+  assert.deepEqual(twoEpsilonRows, savedTargets, 'target settings are caller-owned and never mutated');
+  const fCycle = currentSums(state.f.edgeDots);
+  fCycle[0] += 0.01;
+  const inconsistent = activate('f', state.f.edgeDots, fCycle);
+  assert.equal(inconsistent.ok, false, 'inconsistent equality cycle is rejected');
+  assert.deepEqual(inconsistent.edgeDots, state.f.edgeDots);
+  assert.match(inconsistent.reason, /conflict/);
+  const localFailure = activate('d', state.d.layouts.seven, targets([0, 1]));
+  assert.equal(localFailure.ok, false);
+  assert.match(localFailure.reason, /No feasible adjustment found/, 'failed bounded search does not claim global impossibility');
+
+  let lockedMoves = 0;
+  for (const [mode, , dots] of fixtures) {
+    const sums = currentSums(dots);
+    const locked = activate(mode, dots, sums);
+    assert.ok(locked.ok);
+    assert.deepEqual(locked.edgeDots, dots, 'all current targets freeze without movement');
+    for (const behavior of ['stop', 'adjust-neighbors']) {
+      for (const value of [0.25, dots[3].left + 0.01, 0.75]) {
+        const result = move(mode, dots, { edge: 3, role: 'shared' }, value, behavior, sums);
+        validateLocks(mode, result.edgeDots, sums, result.feasibility);
+        assert.deepEqual(result.edgeDots.map((edge) => edge.split), dots.map((edge) => edge.split));
+        assert.deepEqual(sums, currentSums(dots), 'dragging preserves saved current targets');
+        lockedMoves++;
+      }
+    }
+  }
+
   let checkedMoves = 0;
   for (const [mode, , dots] of fixtures) {
     const original = copy(dots);
@@ -163,7 +284,7 @@ try {
       }
     }
   }
-  console.log(`Strategy 3 movement passed: all five presets, ${checkedMoves} validated moves, fixed-other-dot stopping, coupled chains/tail/common pair, strict margins, source certificates, and no enclosure fits.`);
+  console.log(`Strategy 3 movement passed: all five presets, ${checkedMoves} unlocked and ${lockedMoves} locked moves, exact sum activation/rollback, linked Stop, coupled propagation, D/F source distinctions, source certificates, and no enclosure fits.`);
 } finally {
   await server.close();
 }

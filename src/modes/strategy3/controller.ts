@@ -1,17 +1,18 @@
 import { setupAbUnionInteraction } from '../../ab-union/interaction';
 import { AB_UNION_REGION_COLORS, renderAbUnionBoundaryControls, renderAbUnionRegions } from '../../ab-union/render';
 import { createDefaultAbUnionState } from '../../ab-union/state';
-import type { AbUnionDotHandle, AbUnionState } from '../../ab-union/types';
+import type { AbUnionDotHandle, AbUnionState, AbUnionSumConstraintMode } from '../../ab-union/types';
 import { escapeHtml } from '../../app/format';
 import { config, mathToCanvas } from '../../coords';
 import { drawHexagon, drawHexagonLines, HEXAGON_VERTICES } from '../../hexagon';
 import { evaluateStrategy3Boundary, type BoundaryEvaluation, type BoundaryRole } from '../../strategy3/boundary';
-import { checkStrategy3Feasibility, projectStrategy3Move } from '../../strategy3/feasibility';
+import { checkStrategy3Feasibility, projectStrategy3Move, projectStrategy3SumChange } from '../../strategy3/feasibility';
 import { drawWitnessConstruction } from '../../strategy3/render';
 import { prepareStrategy3Restore } from '../../strategy3/restore';
 import {
-  createDefaultStrategy3State, strategy3EdgeDots,
-  type Strategy3Mode, type Strategy3State,
+  createDefaultStrategy3State, strategy3EdgeDots, strategy3SumConstraints,
+  STRATEGY3_SUM_EPSILON_MIN, STRATEGY3_SUM_EPSILON_MAX,
+  type Strategy3Mode, type Strategy3State, type Strategy3SumConstraints,
 } from '../../strategy3/state';
 import type { ShapeMode, TriangleState } from '../../types';
 
@@ -31,6 +32,18 @@ function restrictionText(role: BoundaryRole): string {
   const exactA = role.restriction === 'in' || role.restriction === 'both';
   const exactB = role.restriction === 'out' || role.restriction === 'both';
   return `A ${exactA ? '=' : '≥'} a; B ${exactB ? '=' : '≥'} b`;
+}
+
+function criticalityText(role: BoundaryRole): string {
+  return role.criticality === 'any' ? 'A + B unrestricted'
+    : role.criticality === 'supercritical' ? 'A + B > 1' : 'A + B ≤ 1';
+}
+
+function sumLockConflict(active: Strategy3Mode, index: number, kind: AbUnionSumConstraintMode): string | null {
+  if (kind === 'one' && active === 'f' && index === 4) return 'Case F requires selected a4 + b4 > 1.';
+  const exceptional = active === 'bc' ? 0 : active === 'd' ? 1 : 4;
+  if (kind === 'one-plus-delta' && index !== exceptional) return 'This row requires actual A + B ≤ 1, so its lower demands cannot sum to 1 + ε.';
+  return null;
 }
 
 export function createStrategy3Controller(deps: Dependencies) {
@@ -71,7 +84,7 @@ export function createStrategy3Controller(deps: Dependencies) {
   function moveDot(adapter: AbUnionState, dot: AbUnionDotHandle, value: number): void {
     const active = mode();
     if (!active) return;
-    const projected = projectStrategy3Move(active, adapter.edgeDots, dot, value, state.dragBehavior);
+    const projected = projectStrategy3Move(active, adapter.edgeDots, dot, value, state.dragBehavior, strategy3SumConstraints(state, active).fixedSums);
     adapter.edgeDots = projected.edgeDots;
     movementStatus = projected.blockedReason
       ? `Movement limited: ${projected.blockedReason}`
@@ -130,10 +143,25 @@ export function createStrategy3Controller(deps: Dependencies) {
 
   function renderControls(active: Strategy3Mode, sample: BoundaryEvaluation, regions: Array<{ count: number; status: string }>): void {
     const edges = strategy3EdgeDots(state, active);
+    const sums = strategy3SumConstraints(state, active);
     const count = edges.reduce((total, edge) => total + (edge.split ? 2 : 1), 0);
     const key = `${active}:${count}`;
     if (panelKey !== key) {
       panelKey = key;
+      const sumRows = sample.roles.map((role, index) => `
+      <div class="free-small-status" data-strategy3-sum-row="${index}">
+        <strong style="color:${AB_UNION_REGION_COLORS[index]}">V${index}</strong>
+        a + b = <span data-strategy3-sum-value="${index}">${numberText(role.a + role.b)}</span>;
+        locked target: <span data-strategy3-sum-target="${index}">${sums.fixedSums[index] === null ? 'none' : numberText(sums.fixedSums[index])}</span>;
+        actual source: ${criticalityText(role)}${role.suppliesMidpoint ? '; contains M1' : ''}
+        <div class="free-toolbar">${(['current', 'one', 'one-plus-delta'] as const).map((kind) => {
+          const conflict = sumLockConflict(active, index, kind);
+          const label = kind === 'current' ? 'Hold current sum' : kind === 'one' ? 'a + b = 1' : 'a + b = 1 + ε';
+          return `<label title="${escapeHtml(conflict ?? label)}"><input type="checkbox" data-strategy3-sum-mode="${kind}" data-strategy3-sum-index="${index}" data-strategy3-owner="${key}" aria-label="V${index} ${label}"${sums.sumConstraintModes[index] === kind ? ' checked' : ''}${conflict ? ' disabled' : ''}/>${label}</label>`;
+        }).join('')}</div>
+        ${active === 'f' && index === 4 ? '<span>Selected a4 + b4 must exceed 1.</span>'
+          : role.criticality === 'non-supercritical' ? '<span>The case requires a + b ≤ 1; the 1 + ε lock is unavailable.</span>' : ''}
+      </div>`).join('');
       deps.controls.innerHTML = `
         ${active === 'f' ? '' : `<div class="free-toolbar">Boundary layout
           ${(['seven', 'eight'] as const).map((layout) => `<button type="button" class="free-button" data-strategy3-layout="${layout}" aria-pressed="${state[active].layout === layout}">${layout === 'seven' ? '7 dots · one gap' : '8 dots · two gaps'}</button>`).join('')}
@@ -154,6 +182,12 @@ export function createStrategy3Controller(deps: Dependencies) {
         <div class="ab-union-toolbar" aria-label="AB region visibility"><span>Visible AB sets</span>
           ${AB_UNION_REGION_COLORS.map((color, index) => `<label style="color:${color}"><input type="checkbox" data-ab-region-visible="${index}" aria-label="Show AB set at V${index}"/>V${index}</label>`).join('')}
         </div>
+        <div class="ab-union-section-title">Boundary sum locks</div>
+        <p class="free-small-status">Lock a + b from the white dots. Each row allows one lock; uncheck it to release. Uppercase A + B is the actual source-triangle sum and always follows the case rule.</p>
+        <label class="ab-union-toolbar">Sum ε
+          <input class="ab-hull-debug-number" type="number" min="${STRATEGY3_SUM_EPSILON_MIN}" max="${STRATEGY3_SUM_EPSILON_MAX}" step="0.000001" data-strategy3-sum-epsilon data-strategy3-owner="${key}" aria-label="Boundary sum epsilon"/>
+        </label>
+        <div data-strategy3-sums>${sumRows}</div>
         <div class="ab-union-section-title">Boundary positions · t from Vi to Vi+1</div>
         ${edges.map((edge, index) => `<div class="ab-union-toolbar"><span>e${index}</span>
           ${(edge.split ? ['left', 'right'] as const : ['shared'] as const).map((role) => `<label>${role === 'shared' ? `b${index}/a${(index + 1) % 6}` : role === 'left' ? `b${index}` : `a${(index + 1) % 6}`}
@@ -181,12 +215,21 @@ export function createStrategy3Controller(deps: Dependencies) {
       input.checked = input.value === state.dragBehavior;
     }
     deps.controls.querySelector<HTMLElement>('[data-strategy3-movement-note]')!.textContent = state.dragBehavior === 'stop'
-      ? 'Other dots stay fixed. The selected dot stops at its feasible limit.'
+      ? 'Dots linked by sum locks move together. Unrelated dots stay fixed; the selected group stops at its feasible limit.'
       : 'Linked boundary constraints push neighboring dots around the hexagon. Movement stops when the resulting triangles or construction would become infeasible.';
     deps.controls.querySelector<HTMLElement>('[data-strategy3-movement-status]')!.textContent = movementStatus;
     for (const input of deps.controls.querySelectorAll<HTMLInputElement>('[data-ab-region-visible]')) {
       input.checked = state[active].regionVisible[Number(input.dataset.abRegionVisible)];
     }
+    const epsilonInput = deps.controls.querySelector<HTMLInputElement>('[data-strategy3-sum-epsilon]')!;
+    if (epsilonInput !== document.activeElement) epsilonInput.value = String(sums.epsilon);
+    for (const input of deps.controls.querySelectorAll<HTMLInputElement>('[data-strategy3-sum-mode]')) {
+      input.checked = sums.sumConstraintModes[Number(input.dataset.strategy3SumIndex)] === input.dataset.strategy3SumMode;
+    }
+    sample.roles.forEach((role, index) => {
+      deps.controls.querySelector<HTMLElement>(`[data-strategy3-sum-value="${index}"]`)!.textContent = numberText(role.a + role.b);
+      deps.controls.querySelector<HTMLElement>(`[data-strategy3-sum-target="${index}"]`)!.textContent = sums.fixedSums[index] === null ? 'none' : numberText(sums.fixedSums[index]);
+    });
     const witness = sample.witness;
     const geometryOk = 'geometryApplicable' in witness ? witness.geometryApplicable : witness.domainOk;
     const caseOk = sample.conditions.filter((condition) => condition.group === 'source').every((condition) => condition.ok);
@@ -210,7 +253,7 @@ export function createStrategy3Controller(deps: Dependencies) {
       <table class="ab-union-table"><thead><tr><th>V</th><th>a</th><th>b</th><th>Γ</th><th>1−Γ</th></tr></thead><tbody>
         ${sample.roles.map((role, index) => `<tr><td style="color:${AB_UNION_REGION_COLORS[index]}">V${index}</td><td>${role.a.toFixed(4)}</td><td>${role.b.toFixed(4)}</td><td>${sample.capacities[index].gamma?.toFixed(4) ?? '—'}</td><td>${sample.capacities[index].radial?.toFixed(4) ?? '—'}</td></tr>`).join('')}
       </tbody></table>
-      ${sample.roles.map((role, index) => `<div class="free-small-status" data-strategy3-region="${index}" data-source-count="${regions[index].count}"><strong style="color:${AB_UNION_REGION_COLORS[index]}">V${index}: ${restrictionText(role)}</strong>; ${role.criticality === 'any' ? 'reach sum unrestricted' : role.criticality}${role.suppliesMidpoint ? '; supplies M1' : ''}. ${escapeHtml(regions[index].status)}</div>`).join('')}`;
+      ${sample.roles.map((role, index) => `<div class="free-small-status" data-strategy3-region="${index}" data-source-count="${regions[index].count}"><strong style="color:${AB_UNION_REGION_COLORS[index]}">V${index}: ${restrictionText(role)}</strong>; ${criticalityText(role)}${role.suppliesMidpoint ? '; supplies M1' : ''}. ${escapeHtml(regions[index].status)}</div>`).join('')}`;
   }
 
   function renderFrame(): void {
@@ -223,7 +266,7 @@ export function createStrategy3Controller(deps: Dependencies) {
       evaluations[active] = { key, sample: evaluateStrategy3Boundary(active, adapter.edgeDots, state[active].disabledPointIds, construction) };
     }
     const sample = evaluations[active]!.sample;
-    const feasibility = checkStrategy3Feasibility(active, adapter.edgeDots);
+    const feasibility = checkStrategy3Feasibility(active, adapter.edgeDots, strategy3SumConstraints(state, active).fixedSums);
     deps.ctx.clearRect(0, 0, config.canvasSize, config.canvasSize);
     drawHexagon(deps.ctx);
     const { regions } = renderAbUnionRegions(deps.ctx, adapter, {
@@ -247,7 +290,7 @@ export function createStrategy3Controller(deps: Dependencies) {
     });
     deps.ctx.restore();
     drawWitnessConstruction(deps.ctx, sample.witness, { showDisk: active === 'f' && state.f.showDisk });
-    renderAbUnionBoundaryControls(deps.ctx, adapter, { showFMarkTriangle: false });
+    renderAbUnionBoundaryControls(deps.ctx, adapter, { showFMarkTriangle: false, readOnly: true });
     renderControls(active, sample, regions);
   }
 
@@ -266,6 +309,54 @@ export function createStrategy3Controller(deps: Dependencies) {
     deps.render();
   }
 
+  function applySumInput(input: HTMLInputElement): void {
+    const active = mode();
+    if (!active || input.dataset.strategy3Owner !== panelKey || !panelKey.startsWith(`${active}:`)) return;
+    finishDrag();
+    const current = strategy3SumConstraints(state, active);
+    const next: Strategy3SumConstraints = structuredClone(current);
+    if (input.dataset.strategy3SumEpsilon !== undefined) {
+      const epsilon = input.value.trim() === '' ? NaN : Number(input.value);
+      if (!Number.isFinite(epsilon) || epsilon < STRATEGY3_SUM_EPSILON_MIN || epsilon > STRATEGY3_SUM_EPSILON_MAX) {
+        movementStatus = `Sum ε must be between ${STRATEGY3_SUM_EPSILON_MIN} and ${STRATEGY3_SUM_EPSILON_MAX}.`;
+        input.value = String(current.epsilon);
+        deps.render();
+        return;
+      }
+      next.epsilon = epsilon;
+      next.sumConstraintModes.forEach((kind, index) => {
+        if (kind === 'one-plus-delta') next.fixedSums[index] = 1 + epsilon;
+      });
+    } else {
+      const index = Number(input.dataset.strategy3SumIndex);
+      const kind = input.dataset.strategy3SumMode;
+      if (!Number.isInteger(index) || index < 0 || index > 5 || (kind !== 'current' && kind !== 'one' && kind !== 'one-plus-delta')) return;
+      const conflict = input.checked ? sumLockConflict(active, index, kind) : null;
+      if (conflict) {
+        movementStatus = conflict;
+        deps.render();
+        return;
+      }
+      const edges = strategy3EdgeDots(state, active);
+      next.sumConstraintModes[index] = input.checked ? kind : 'none';
+      next.fixedSums[index] = !input.checked ? null : kind === 'one' ? 1 : kind === 'one-plus-delta'
+        ? 1 + next.epsilon : 1 - edges[(index + 5) % 6].right + edges[index].left;
+    }
+    const projected = projectStrategy3SumChange(active, strategy3EdgeDots(state, active), next.fixedSums);
+    if (projected.ok) {
+      if (active === 'f') {
+        state.f.edgeDots = projected.edgeDots;
+        state.f.sumConstraints = next;
+      } else {
+        state[active].layouts[state[active].layout] = projected.edgeDots;
+        state[active].sumConstraints[state[active].layout] = next;
+      }
+      movementStatus = 'Sum locks updated. Boundary positions preserve the case and source conditions.';
+    } else movementStatus = projected.reason ?? 'No feasible adjustment found while preserving these locks.';
+    if (input.dataset.strategy3SumEpsilon !== undefined) input.value = String(strategy3SumConstraints(state, active).epsilon);
+    deps.render();
+  }
+
   deps.controls.addEventListener('click', (event) => {
     const active = mode();
     if (!active || active === 'f' || !(event.target instanceof HTMLElement)) return;
@@ -281,7 +372,9 @@ export function createStrategy3Controller(deps: Dependencies) {
     const active = mode();
     const input = event.target;
     if (!active || !(input instanceof HTMLInputElement)) return;
-    if (input.dataset.strategy3DragBehavior !== undefined) {
+    if (input.dataset.strategy3SumMode !== undefined || input.dataset.strategy3SumEpsilon !== undefined) {
+      applySumInput(input);
+    } else if (input.dataset.strategy3DragBehavior !== undefined) {
       if (input.value !== 'stop' && input.value !== 'adjust-neighbors') return;
       finishDrag();
       movementStatus = '';
@@ -307,7 +400,8 @@ export function createStrategy3Controller(deps: Dependencies) {
   });
   deps.controls.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
-      applyInput(event.target);
+      if (event.target.dataset.strategy3SumEpsilon !== undefined) applySumInput(event.target);
+      else applyInput(event.target);
       event.preventDefault();
     }
   });

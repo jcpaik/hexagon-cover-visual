@@ -1,13 +1,23 @@
-import type { AbUnionEdgeDots } from '../ab-union/types';
+import type { AbUnionEdgeDots, AbUnionSumConstraintMode } from '../ab-union/types';
 import { NINE_POINT_IDS, type NinePointConstruction } from './geometry';
 
 export type Strategy3Mode = 'bc' | 'd' | 'f';
 export type Strategy3GapLayout = 'seven' | 'eight';
 export type Strategy3DragBehavior = 'stop' | 'adjust-neighbors';
+export const STRATEGY3_SUM_EPSILON_MIN = 1e-6;
+export const STRATEGY3_SUM_EPSILON_MAX = 0.159999;
+export const STRATEGY3_SUM_EPSILON_DEFAULT = 1e-6;
+
+export interface Strategy3SumConstraints {
+  sumConstraintModes: AbUnionSumConstraintMode[];
+  fixedSums: Array<number | null>;
+  epsilon: number;
+}
 
 interface GapConstructionState {
   layout: Strategy3GapLayout;
   layouts: Record<Strategy3GapLayout, AbUnionEdgeDots[]>;
+  sumConstraints: Record<Strategy3GapLayout, Strategy3SumConstraints>;
   disabledPointIds: string[];
   regionVisible: boolean[];
 }
@@ -18,6 +28,7 @@ export interface Strategy3State {
   d: GapConstructionState;
   f: {
     edgeDots: AbUnionEdgeDots[];
+    sumConstraints: Strategy3SumConstraints;
     disabledPointIds: string[];
     regionVisible: boolean[];
     showDisk: boolean;
@@ -31,6 +42,14 @@ function dots(values: Array<number | [number, number]>): AbUnionEdgeDots[] {
     : { left: value, right: value, split: false });
 }
 
+export function createDefaultStrategy3SumConstraints(): Strategy3SumConstraints {
+  return {
+    sumConstraintModes: Array(6).fill('none'),
+    fixedSums: Array(6).fill(null),
+    epsilon: STRATEGY3_SUM_EPSILON_DEFAULT,
+  };
+}
+
 export function createDefaultStrategy3State(): Strategy3State {
   return {
     dragBehavior: 'stop',
@@ -40,6 +59,7 @@ export function createDefaultStrategy3State(): Strategy3State {
         seven: dots([[0.35, 0.65], 0.605, 0.555, 0.505, 0.455, 0.405]),
         eight: dots([[0.42, 0.58], 0.555, 0.505, 0.455, 0.405, [0.3, 0.5]]),
       },
+      sumConstraints: { seven: createDefaultStrategy3SumConstraints(), eight: createDefaultStrategy3SumConstraints() },
       disabledPointIds: [],
       regionVisible: Array(6).fill(true),
     },
@@ -49,11 +69,13 @@ export function createDefaultStrategy3State(): Strategy3State {
         seven: dots([0.3, 0.41, 0.36, 0.31, 0.26, [0.2, 0.8]]),
         eight: dots([[0.68, 0.70], 0.74, 0.65, 0.56, 0.47, [0.2, 0.8]]),
       },
+      sumConstraints: { seven: createDefaultStrategy3SumConstraints(), eight: createDefaultStrategy3SumConstraints() },
       disabledPointIds: [],
       regionVisible: Array(6).fill(true),
     },
     f: {
       edgeDots: dots([0.528, 0.502, 0.476, 0.45, 0.58, 0.554]),
+      sumConstraints: createDefaultStrategy3SumConstraints(),
       disabledPointIds: [],
       regionVisible: Array(6).fill(true),
       showDisk: true,
@@ -66,6 +88,12 @@ export function strategy3EdgeDots(state: Strategy3State, mode: Strategy3Mode): A
   if (mode === 'f') return state.f.edgeDots;
   const construction = state[mode];
   return construction.layouts[construction.layout];
+}
+
+export function strategy3SumConstraints(state: Strategy3State, mode: Strategy3Mode): Strategy3SumConstraints {
+  if (mode === 'f') return state.f.sumConstraints;
+  const construction = state[mode];
+  return construction.sumConstraints[construction.layout];
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -115,6 +143,29 @@ function sanitizeRegionVisible(value: unknown): boolean[] {
   return [...value];
 }
 
+function sanitizeSumConstraints(value: unknown): Strategy3SumConstraints {
+  if (value === undefined) return createDefaultStrategy3SumConstraints();
+  const raw = object(value, 'sum constraints');
+  const modes = ['none', 'current', 'one', 'one-plus-delta'];
+  if (!Array.isArray(raw.sumConstraintModes) || raw.sumConstraintModes.length !== 6
+    || !Array.from(raw.sumConstraintModes).every((mode) => typeof mode === 'string' && modes.includes(mode))) {
+    throw new Error('Invalid Strategy 3 sum constraint modes.');
+  }
+  if (!Array.isArray(raw.fixedSums) || raw.fixedSums.length !== 6
+    || !Array.from(raw.fixedSums).every((sum) => sum === null || (typeof sum === 'number' && Number.isFinite(sum) && sum >= 0 && sum <= 2))) {
+    throw new Error('Invalid Strategy 3 fixed sums.');
+  }
+  if (typeof raw.epsilon !== 'number' || !Number.isFinite(raw.epsilon)
+    || raw.epsilon < STRATEGY3_SUM_EPSILON_MIN || raw.epsilon > STRATEGY3_SUM_EPSILON_MAX) {
+    throw new Error('Invalid Strategy 3 sum epsilon.');
+  }
+  return {
+    sumConstraintModes: [...raw.sumConstraintModes] as AbUnionSumConstraintMode[],
+    fixedSums: [...raw.fixedSums],
+    epsilon: raw.epsilon,
+  };
+}
+
 function sanitizeGapConstruction(
   value: unknown,
   defaults: GapConstructionState,
@@ -127,11 +178,19 @@ function sanitizeGapConstruction(
     throw new Error('Invalid Strategy 3 boundary layout.');
   }
   const layouts = object(raw.layouts, 'boundary layouts');
+  const sumConstraints = raw.sumConstraints === undefined ? {} : object(raw.sumConstraints, 'layout sum constraints');
+  if (raw.sumConstraints !== undefined && (sumConstraints.seven === undefined || sumConstraints.eight === undefined)) {
+    throw new Error('Invalid Strategy 3 layout sum constraints.');
+  }
   return {
     layout: raw.layout,
     layouts: {
       seven: sanitizeDots(layouts.seven, [mandatoryGap]),
       eight: sanitizeDots(layouts.eight, [0, 5]),
+    },
+    sumConstraints: {
+      seven: sanitizeSumConstraints(sumConstraints.seven),
+      eight: sanitizeSumConstraints(sumConstraints.eight),
     },
     disabledPointIds: sanitizePointIds(raw.disabledPointIds, pointIds),
     regionVisible: sanitizeRegionVisible(raw.regionVisible),
@@ -159,6 +218,7 @@ export function sanitizeStrategy3State(value: unknown): Strategy3State {
     d: sanitizeGapConstruction(raw.d, defaults.d, 5, ['O', 'PT', 'G0', 'G1']),
     f: {
       edgeDots: sanitizeDots(f.edgeDots, []),
+      sumConstraints: sanitizeSumConstraints(f.sumConstraints),
       disabledPointIds: sanitizePointIds(f.disabledPointIds, NINE_POINT_IDS),
       regionVisible: sanitizeRegionVisible(f.regionVisible),
       showDisk: f.showDisk,

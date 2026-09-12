@@ -213,9 +213,10 @@ export function createApp() {
     const loadedStatus = originalVersion < 11
       ? 'Legacy snapshot loaded. BC/D boundary controls initialized; independent parameters and triangle poses retired.'
       : 'Snapshot loaded.';
-    const resetStatus = preparedStrategy3.resets.map(({ mode, layout, reasons }) => {
+    const resetStatus = preparedStrategy3.resets.map(({ mode, layout, reasons, action }) => {
       const label = `${mode.toUpperCase()}${layout ? ` ${layout === 'seven' ? '7' : '8'}-dot` : ''}`;
-      return `${label} boundaries reset to the feasible preset: ${reasons.map((reason) => reason.replace(/\.$/, '')).join('; ')}.`;
+      const change = action === 'locks-cleared' ? 'inconsistent sum locks cleared' : 'boundaries reset to the feasible preset; sum locks cleared';
+      return `${label} ${change}: ${reasons.map((reason) => reason.replace(/\.$/, '')).join('; ')}.`;
     });
     setControllerStateStatus([loadedStatus, ...resetStatus].join(' '));
   }

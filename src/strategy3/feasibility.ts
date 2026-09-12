@@ -2,11 +2,16 @@ import { findRestrictedAbSource } from '../ab-union/feasibility';
 import type { AbUnionDotHandle, AbUnionEdgeDots } from '../ab-union/types';
 import type { Point } from '../types';
 import { strategy3BoundaryInputs } from './boundary';
+import {
+  boundaryRelations, boundaryVariables, dotsFromSumRoots, projectSumRoots, sumActivationSeeds,
+  sumConstraintSystem, validFixedSums, STRATEGY3_SUM_TOLERANCE, type BoundaryVariables,
+} from './constraints';
 import { constructBC, constructD, constructNinePoint } from './geometry';
 import type { Strategy3Mode } from './state';
 
 export const STRATEGY3_STRICT_MARGIN = 1e-9;
 const MOVE_TOLERANCE = 1e-6;
+export { STRATEGY3_SUM_TOLERANCE };
 
 export interface Strategy3Feasibility {
   ok: boolean;
@@ -24,13 +29,14 @@ export interface Strategy3MoveResult {
 }
 
 const feasibilityCache = new Map<Strategy3Mode, { key: string; result: Strategy3Feasibility }>();
+const lockedFeasibilityCache = new Map<Strategy3Mode, { key: string; result: Strategy3Feasibility }>();
 
 function boundaryKey(edgeDots: readonly AbUnionEdgeDots[]): string {
   return JSON.stringify(edgeDots.map(({ left, right, split }) => [left, right, split]));
 }
 
 // This path constructs every witness, but never fits an enclosing triangle.
-export function checkStrategy3Feasibility(mode: Strategy3Mode, edgeDots: readonly AbUnionEdgeDots[]): Strategy3Feasibility {
+function checkGeometryFeasibility(mode: Strategy3Mode, edgeDots: readonly AbUnionEdgeDots[]): Strategy3Feasibility {
   const key = boundaryKey(edgeDots);
   const cached = feasibilityCache.get(mode);
   if (cached?.key === key) return cached.result;
@@ -89,21 +95,22 @@ export function checkStrategy3Feasibility(mode: Strategy3Mode, edgeDots: readonl
   return finish();
 }
 
-interface BoundaryVariables {
-  values: number[];
-  left: number[];
-  right: number[];
-}
-
-function boundaryVariables(edgeDots: readonly AbUnionEdgeDots[]): BoundaryVariables {
-  const values: number[] = [], left: number[] = [], right: number[] = [];
-  edgeDots.forEach((edge) => {
-    left.push(values.length);
-    values.push(edge.left);
-    right.push(edge.split ? values.length : values.length - 1);
-    if (edge.split) values.push(edge.right);
+export function checkStrategy3Feasibility(mode: Strategy3Mode, edgeDots: readonly AbUnionEdgeDots[], fixedSums?: readonly (number | null)[]): Strategy3Feasibility {
+  if (fixedSums === undefined) return checkGeometryFeasibility(mode, edgeDots);
+  const key = `${boundaryKey(edgeDots)}:${JSON.stringify(fixedSums)}`;
+  const cached = lockedFeasibilityCache.get(mode);
+  if (cached?.key === key) return cached.result;
+  const geometry = checkGeometryFeasibility(mode, edgeDots);
+  const reasons = [...geometry.reasons];
+  if (!validFixedSums(fixedSums)) reasons.push('Expected six finite sum targets from 0 to 2, or unlocked rows.');
+  else if (edgeDots.length === 6) fixedSums.forEach((target, index) => {
+    if (target !== null && Math.abs(1 - edgeDots[(index + 5) % 6].right + edgeDots[index].left - target) > STRATEGY3_SUM_TOLERANCE) {
+      reasons.push(`V${index}: selected boundary sum does not match its locked target.`);
+    }
   });
-  return { values, left, right };
+  const result = reasons.length === geometry.reasons.length ? geometry : { ok: false, reasons, sources: geometry.sources };
+  lockedFeasibilityCache.set(mode, { key, result });
+  return result;
 }
 
 // Each relation is x_left <= scale * x_right + offset. Propagating bounds
@@ -117,19 +124,7 @@ function adjustNeighbors(
   const { values, left, right } = variables;
   const lower = values.map(() => margin), upper = values.map(() => 1 - margin);
   lower[driver] = upper[driver] = value;
-  const constraints: Array<[number, number, number, number]> = [];
-  for (let index = 0; index < 6; index++) {
-    if (edgeDots[index].split) constraints.push([left[index], right[index], 1, 0]);
-    const exceptional = mode === 'bc' ? 0 : mode === 'd' ? 1 : 4;
-    if (index !== exceptional) constraints.push([left[index], right[(index + 5) % 6], 1, 0]);
-  }
-  if (mode === 'bc') constraints.push([left[0], left[5], 2, 0]);
-  if (mode === 'f') {
-    for (let index = 0; index < 6; index++) {
-      constraints.push([right[index], left[4], 1, 0], [right[3], left[index], 1, 0]);
-    }
-    constraints.push([right[3], left[4], 1, -margin]);
-  }
+  const constraints = boundaryRelations(mode, edgeDots, variables, margin);
   for (let pass = 0; pass < values.length * 2; pass++) {
     let changed = false;
     for (const [first, second, scale, offset] of constraints) {
@@ -152,15 +147,18 @@ export function projectStrategy3Move(
   dot: AbUnionDotHandle,
   value: number,
   behavior: 'stop' | 'adjust-neighbors',
+  fixedSums?: readonly (number | null)[],
 ): Strategy3MoveResult {
-  const initial = checkStrategy3Feasibility(mode, edgeDots);
+  const initial = checkStrategy3Feasibility(mode, edgeDots, fixedSums);
+  const hasLocks = fixedSums?.some((value) => value !== null) === true;
   const variables = boundaryVariables(edgeDots);
   const driver = dot.role === 'right' ? variables.right[dot.edge] : variables.left[dot.edge];
   const original = variables.values[driver];
   const finish = (dots: AbUnionEdgeDots[], feasibility: Strategy3Feasibility, blockedReason: string | null): Strategy3MoveResult => {
     const next = boundaryVariables(dots).values;
     const moved = next.map((position, index) => Math.abs(position - variables.values[index]) > 1e-12);
-    feasibilityCache.set(mode, { key: boundaryKey(dots), result: feasibility });
+    if (fixedSums === undefined) feasibilityCache.set(mode, { key: boundaryKey(dots), result: feasibility });
+    else lockedFeasibilityCache.set(mode, { key: `${boundaryKey(dots)}:${JSON.stringify(fixedSums)}`, result: feasibility });
     return {
       edgeDots: dots, acceptedValue: next[driver], changed: moved.some(Boolean),
       adjustedNeighbors: moved.filter((changed, index) => changed && index !== driver).length,
@@ -174,13 +172,24 @@ export function projectStrategy3Move(
     return finish(unchanged, initial, 'Select a boundary handle and a finite position.');
   }
   const target = Math.max(0, Math.min(1, value));
+  const system = hasLocks ? sumConstraintSystem(mode, edgeDots, fixedSums!, STRATEGY3_STRICT_MARGIN) : null;
+  if (hasLocks && !system) return finish(unchanged, initial, 'The active sum locks conflict with the boundary constraints.');
   const attempt = (position: number) => {
-    const dots = behavior === 'adjust-neighbors'
+    let dots: AbUnionEdgeDots[] | null;
+    if (system) {
+      const drivenComponent = system.component[driver];
+      const roots = system.members.map((group) => variables.values[group[0]] - system.offsets[group[0]]);
+      roots[drivenComponent] = position - system.offsets[driver];
+      const fixed = new Map<number, number>();
+      roots.forEach((root, index) => { if (behavior === 'stop' || index === drivenComponent) fixed.set(index, root); });
+      const projected = projectSumRoots(system, roots, fixed);
+      dots = projected ? dotsFromSumRoots(system, edgeDots, projected, behavior === 'stop' ? drivenComponent : undefined) : null;
+    } else dots = behavior === 'adjust-neighbors'
       ? adjustNeighbors(mode, edgeDots, variables, driver, position)
       : edgeDots.map((edge, index) => index !== dot.edge ? { ...edge }
         : dot.role === 'shared' ? { ...edge, left: position, right: position } : { ...edge, [dot.role]: position });
     if (!dots) return { dots: null, feasibility: null, reason: 'Boundary ordering and case bounds block this position.' };
-    const feasibility = checkStrategy3Feasibility(mode, dots);
+    const feasibility = checkStrategy3Feasibility(mode, dots, fixedSums);
     return { dots, feasibility, reason: feasibility.reasons[0] ?? null };
   };
   const requested = attempt(target);
@@ -197,4 +206,29 @@ export function projectStrategy3Move(
     } else high = fraction;
   }
   return finish(bestDots, bestFeasibility, requested.reason);
+}
+
+export function projectStrategy3SumChange(
+  mode: Strategy3Mode, edgeDots: readonly AbUnionEdgeDots[], nextFixedSums: readonly (number | null)[],
+): { ok: boolean; edgeDots: AbUnionEdgeDots[]; feasibility: Strategy3Feasibility; reason: string | null } {
+  const unchanged = edgeDots.map((edge) => ({ ...edge }));
+  const current = checkStrategy3Feasibility(mode, edgeDots, nextFixedSums);
+  if (current.ok) return { ok: true, edgeDots: unchanged, feasibility: current, reason: null };
+  const failure = (reason: string) => ({ ok: false, edgeDots: unchanged, feasibility: current, reason });
+  if (edgeDots.length !== 6 || !validFixedSums(nextFixedSums)) return failure('Invalid boundary sum targets; previous settings were kept.');
+  const system = sumConstraintSystem(mode, edgeDots, nextFixedSums, STRATEGY3_STRICT_MARGIN);
+  if (!system) return failure('Sum locks conflict with the boundary constraints; previous settings were kept.');
+  let best: { edgeDots: AbUnionEdgeDots[]; feasibility: Strategy3Feasibility; score: number } | null = null;
+  for (const seed of sumActivationSeeds(system)) {
+    const roots = projectSumRoots(system, seed);
+    if (!roots) continue;
+    const candidate = dotsFromSumRoots(system, edgeDots, roots);
+    const feasibility = checkStrategy3Feasibility(mode, candidate, nextFixedSums);
+    if (!feasibility.ok) continue;
+    const score = boundaryVariables(candidate).values.reduce((sum, value, index) => sum + (value - system.variables.values[index]) ** 2, 0);
+    if (!best || score < best.score - 1e-15) best = { edgeDots: candidate, feasibility, score };
+  }
+  if (!best) return failure('No feasible adjustment found while preserving the selected sum locks; previous settings were kept.');
+  lockedFeasibilityCache.set(mode, { key: `${boundaryKey(best.edgeDots)}:${JSON.stringify(nextFixedSums)}`, result: best.feasibility });
+  return { ok: true, edgeDots: best.edgeDots, feasibility: best.feasibility, reason: null };
 }

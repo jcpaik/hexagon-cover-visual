@@ -112,7 +112,13 @@ try {
   }
   const narrowSupplier = { ...supplier, a: 0.4999 };
   assert.equal(sample(narrowSupplier, 'full').triangles.length, 0, 'regression has no sources at the display sampling resolution');
-  check(narrowSupplier, find(narrowSupplier));
+  const narrowCertificate = find(narrowSupplier);
+  check(narrowSupplier, narrowCertificate);
+  const seededSupplier = sample(narrowSupplier, 'full', narrowCertificate);
+  assert.ok(seededSupplier.triangles.length > 1, 'verified-source orientation resolves a narrow family missed by the uniform angle grid');
+  seededSupplier.triangles.forEach((triangle) => check(narrowSupplier, triangle));
+  assert.equal(sample(narrowSupplier, 'full', narrowCertificate), seededSupplier, 'unchanged orientation seeds reuse the sampled region');
+  assert.equal(sample(narrowSupplier, 'full').triangles.length, 0, 'orientation seeds participate in the sample cache key');
   // |A_a−M1|² = a²+3/4. At a>=1/2, a unit triangle cannot contain
   // both the anchor and an interior midpoint, independent of orientation.
   for (const a of [0.5, 0.5001, 0.6]) assert.equal(find({ ...supplier, a }), null, 'unit-distance obstruction at the midpoint-supplier boundary');
@@ -135,6 +141,53 @@ try {
   const isolatedSource = find(isolated);
   check(isolated, isolatedSource);
   assert.ok(isolatedSource.every((corner) => pairSource.some((expected) => distance(corner, expected) < 1e-8)), 'unit-length exact anchors fix the same isolated support orientation');
+  const isolatedSamples = sample(isolated, 'full').triangles;
+  assert.ok(isolatedSamples.length > 0, 'computed anchor-side orientation retains a point-shaped offset polytope');
+  isolatedSamples.forEach((triangle) => check(isolated, triangle));
+
+  const equality = { ...base, index: 2, a: 0.3, b: 0.7, criticality: 'non-supercritical' };
+  const triangleKey = (triangle) => JSON.stringify(triangle.map((point) => [Math.round(point.x * 1e9), Math.round(point.y * 1e9)]).sort((a, b) => a[0] - b[0] || a[1] - b[1]));
+  const equalityReference = new Set(sample({ ...equality, restriction: 'both' }, 'full').triangles.map(triangleKey));
+  for (const restriction of ['ordinary', 'in', 'out', 'both']) {
+    const role = { ...equality, restriction };
+    const sources = sample(role, 'full').triangles;
+    assert.ok(sources.length > 10, 'equality rows show their restricted family rather than a single certificate');
+    assert.deepEqual(new Set(sources.map(triangleKey)), equalityReference, 'sum-one nonsupercritical demands imply both exact reaches');
+    sources.forEach((triangle) => {
+      check(role, triangle);
+      close(reach(triangle, vertices[2], vertices[1]), role.a, 3e-11);
+      close(reach(triangle, vertices[2], vertices[3]), role.b, 3e-11);
+    });
+  }
+  for (const slack of [1e-4, 1e-8]) {
+    const role = { ...equality, b: equality.b - slack };
+    const sources = sample(role, 'full').triangles;
+    assert.ok(sources.length > 10);
+    const reaches = sources.map((triangle) => {
+      check(role, triangle);
+      return [reach(triangle, vertices[2], vertices[1]), reach(triangle, vertices[2], vertices[3])];
+    });
+    assert.ok(reaches.some(([a, b]) => a + b < 1 - slack / 8), 'near equality retains actual trace sums below one');
+    assert.ok(reaches.some(([a, b]) => a > role.a + slack / 8 || b > role.b + slack / 8), 'near equality retains the real trace slack instead of fixing both lower demands');
+  }
+  const supercritical = { ...base, a: 0.5, b: 0.5, criticality: 'supercritical' };
+  const supercriticalSamples = sample(supercritical, 'full').triangles;
+  assert.ok(supercriticalSamples.length > 1, 'sum-one lower demands can have supercritical actual sources');
+  supercriticalSamples.forEach((triangle) => check(supercritical, triangle));
+  const asymmetricBoth = { ...base, a: 0.2, b: 0.4, restriction: 'both' };
+  const anchorA = { x: 1 - asymmetricBoth.a / 2, y: -h * asymmetricBoth.a };
+  const anchorB = { x: 1 - asymmetricBoth.b / 2, y: h * asymmetricBoth.b };
+  assert.ok(sample(asymmetricBoth, 'full').triangles.some((triangle) => triangle.some((point, index) => Math.abs(cross(point, triangle[(index + 1) % 3], anchorA)) < 1e-11 && Math.abs(cross(point, triangle[(index + 1) % 3], anchorB)) < 1e-11)), 'asymmetric exact endpoints include their isolated shared-support orientation');
+  for (const mode of ['bc', 'd', 'f']) for (const layout of mode === 'f' ? ['six'] : ['seven', 'eight']) {
+    if (mode !== 'f') state[mode].layout = layout;
+    for (const role of evaluateStrategy3Boundary(mode, strategy3EdgeDots(state, mode)).roles) {
+      for (const quality of ['preview', 'full']) {
+        const sources = sample(role, quality, find(role)).triangles;
+        assert.ok(sources.length > 0, 'each default family is visible at both sampling qualities');
+        sources.forEach((triangle) => check(role, triangle));
+      }
+    }
+  }
   assert.equal(find({ ...supplier, requiredInteriorPoints: [{ x: 3, y: 3 }] }), null, 'required interior points participate in the source cache key');
   assert.throws(() => find({ ...base, requiredInteriorPoints: [{ x: 0.25, y: h / 2 }] }), /requires an exact edge/, 'unsupported interior-source families are not silently reported infeasible');
   assert.throws(() => find({ ...supplier, criticality: 'supercritical' }), /requires an exact edge/, 'unsupported supercritical interior constraints are explicit');

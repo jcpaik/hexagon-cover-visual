@@ -30,14 +30,35 @@ Movement preserves the construction/case inequalities and an admissible source
 triangle in each of the six restricted AB families. These checks always use
 the full construction, even when regions or witnesses are hidden.
 
-**Stop that dot** (default) holds all other dots fixed and limits the edited
-position. **Adjust neighboring dots** propagates ordering, nonsupercritical
+**Stop that dot** (default) moves dots linked by a sum lock together and holds
+unrelated dots fixed. **Adjust neighboring dots** propagates ordering, nonsupercritical
 handoff, BC tail, and F common-pair corrections around the boundary. If the
 result violates a source or construction constraint, the movement is shortened.
 This is a local correction rule, not a global closest-configuration search.
 Mouse, touch, and numeric edits use the same rules and report blocking limits.
 Strict inequalities use a `1e-9` margin; blocked edits refine the accepted edge
 position to `1e-6` precision.
+
+Each vertex has three mutually exclusive **boundary sum locks**: hold its
+current $a_i+b_i$, set it to exactly $1$, or set it to $1+\varepsilon$.
+Unchecking the selected box releases the lock. **Sum ε** defaults to `0.000001`
+and accepts values from `0.000001` through `0.159999`; it is separate from D's
+derived construction parameter. Each boundary layout remembers its own locks
+and sum ε. The current-sum lock captures its target once when checked.
+
+Changing a lock or sum ε attempts a coordinated adjustment while preserving
+existing locks and every case/source condition. A bounded local projection
+selects the feasible candidate with the smallest squared handle displacement
+among its attempts. Failure retains the previous dots, locks, and ε; it does
+not establish global impossibility. All locks remain active when regions or
+witnesses are hidden.
+
+These controls constrain lowercase boundary demands, not uppercase actual
+source reaches. The $1+\varepsilon$ option is unavailable on nonsupercritical
+rows. D's supercritical row may have selected demands summing to $1$ because
+its actual reaches can be larger. F's critical row requires selected
+$a_4+b_4>1$, so its equality option is unavailable. The mode's source
+criticality rules always apply independently of the chosen locks.
 
 ## Restricted AB regions
 
@@ -66,7 +87,12 @@ the other rows are nonsupercritical. Here “supercritical” means
 $A_i(S)+B_i(S)>1$. Lower demands $a_i+b_i$ alone do not determine actual reaches
 or certify a covering arrangement.
 
-Sampling uses fewer orientations and offset allocations while dragging, then
+Sampling clips the feasible supporting-side offsets by the actual reach-sum,
+exact-trace, and interior-point conditions before choosing triangles. It
+retains segments and isolated points: in particular, nonsupercritical
+$a+b=1$ forces both actual reaches to be exact. Near-equality demands retain
+their real slack. Source and endpoint-support orientations supplement the
+uniform angle grid. Sampling uses fewer orientations while dragging, then
 refines after release. A separate source solver constructs and validates a
 unit triangle for each family. Rows without interior-point requirements use
 explicit edge-endpoint constructions; D's midpoint supplier uses supporting
@@ -83,7 +109,9 @@ Strategy 3 reuses the AB Union rendering pipeline for these restricted region
 masks. The six region checkboxes change drawing only; hiding a region leaves
 its mask, analytic capacities, witness coordinates, and case checks unchanged.
 Each mode remembers its own visibility choices, shared across that mode's
-seven/eight-dot layouts. All regions are visible initially.
+seven/eight-dot layouts. All regions are visible initially, with colored
+outlines as well as fills. Clicking a vertex highlights its region while
+leaving other visible regions outlined.
 
 ## Analytic witnesses
 
@@ -201,7 +229,9 @@ Controller snapshots use version 11. They store all BC/D boundary layouts,
 the active layouts, F's boundary inputs, witness selections, each mode's
 region visibility, F's disk visibility, F's `pointConstruction`
 (`newton` or `frontier`), and the shared `dragBehavior`
-(`stop` or `adjust-neighbors`). Missing movement preferences default to `stop`.
+(`stop` or `adjust-neighbors`). Each of the five layouts also stores its sum
+lock modes, captured targets, and sum ε. Missing sum settings default to
+unlocked with ε = `0.000001`. Missing movement preferences default to `stop`.
 Regions and witness coordinates are recomputed on loading. Free
 snapshots retain their own version. Older version-11 snapshots without region
 visibility flags load with all six regions visible. Existing version-11 F
@@ -211,7 +241,9 @@ use Newton mode; both explicit selections round-trip without changing it.
 
 Loading checks all five boundary layouts before applying the snapshot. Invalid
 layouts reset to their matching feasible presets, and the load message lists
-each replacement and its reason. Valid layouts, the active layout, witness
+each replacement and its reason. Reset layouts also release their sum locks.
+On otherwise feasible layouts, inconsistent sum locks are released individually
+with a notice. Sum ε and consistent locks are retained. Valid layouts, the active layout, witness
 selections, visibility, and F's construction choice are preserved.
 
 Controller versions 8–10 still load. The former `core-graph` mode becomes

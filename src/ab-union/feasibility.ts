@@ -1,7 +1,7 @@
 import type { Point } from '../types';
 import { HEXAGON_VERTICES } from '../hexagon';
 import { dot, edgeVector, lineIntersection, mod6, pointOnEdge } from './geometry';
-import { abUnionRegionKey } from './regions';
+import { abUnionRegionKey } from './regionKey';
 import type { AbUnionRegionDefinition } from './types';
 
 export const SOURCE_INTERIOR_MARGIN = 1e-9;

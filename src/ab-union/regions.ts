@@ -1,50 +1,79 @@
 import type { Point } from '../types';
 import { HEXAGON_VERTICES } from '../hexagon';
 import { dot, edgeVector, lineIntersection, mod6, pointOnEdge } from './geometry';
+import { isRestrictedAbSource, SOURCE_INTERIOR_MARGIN } from './feasibility';
+import { abUnionRegionKey } from './regionKey';
 import type { AbUnionRegionDefinition } from './types';
+
+export { abUnionRegionKey } from './regionKey';
 
 export interface RestrictedAbSources {
   triangles: Point[][];
   status: string;
 }
 
+type Offsets = [number, number, number];
+interface OffsetCut { coefficients: Offsets; bound: number }
 const H = Math.sqrt(3) / 2;
+const PERIOD = 2 * Math.PI / 3;
+const OFFSET_TOLERANCE = 2e-13;
 const cache = new Map<string, { key: string; result: RestrictedAbSources }>();
+const interpolate = (a: Offsets, b: Offsets, t: number): Offsets => a.map((value, index) => value + t * (b[index] - value)) as Offsets;
 
-export function abUnionRegionKey(definition: AbUnionRegionDefinition): string {
-  const { index, a, b, restriction, criticality, requiredInteriorPoints } = definition;
-  return JSON.stringify([index, a, b, restriction, criticality, requiredInteriorPoints.map((point) => [point.x, point.y])]);
+function compactPolygon(polygon: Offsets[]): Offsets[] {
+  return polygon.filter((point, index) => !polygon.slice(0, index).some((previous) =>
+    point.every((coordinate, axis) => Math.abs(coordinate - previous[axis]) <= OFFSET_TOLERANCE),
+  ));
 }
 
-function compositions(total: number, parts: number, steps: number): number[][] {
-  if (parts === 1) return [[total]];
-  const epsilon = Math.min(1e-5, total / Math.max(1000, parts * 100));
-  if (total <= parts * epsilon) return [Array(parts).fill(total / parts)];
-  if (parts === 2) return Array.from({ length: steps }, (_, index) => {
-    const first = epsilon + (total - 2 * epsilon) * index / (steps - 1);
-    return [first, total - first];
+// The polygon lies in lambda0+lambda1+lambda2=H. Keep its boundary even if
+// clipping collapses the allowed translations to a segment or a single point.
+function clipOffsets(polygon: Offsets[], cut: OffsetCut): Offsets[] {
+  if (!polygon.length) return [];
+  const signed = (point: Offsets) => cut.coefficients.reduce((sum, coefficient, index) => sum + coefficient * point[index], -cut.bound);
+  if (polygon.length === 1) return signed(polygon[0]) <= OFFSET_TOLERANCE ? polygon : [];
+  const clipped: Offsets[] = [];
+  polygon.forEach((start, index) => {
+    const end = polygon[(index + 1) % polygon.length];
+    const from = signed(start), to = signed(end);
+    const insideStart = from <= OFFSET_TOLERANCE, insideEnd = to <= OFFSET_TOLERANCE;
+    if (insideStart !== insideEnd) clipped.push(interpolate(start, end, Math.max(0, Math.min(1, from / (from - to)))));
+    if (insideEnd) clipped.push(end);
   });
-  const result: number[][] = [];
-  for (let first = 0; first <= steps; first++) {
-    for (let second = 0; second <= steps - first; second++) {
-      result.push([first, second, steps - first - second].map((weight) => (weight + 0.35) * total / (steps + 1.05)));
+  return compactPolygon(clipped);
+}
+
+function sampleOffsets(polygon: Offsets[], steps: number): Offsets[] {
+  if (polygon.length <= 1) return polygon;
+  if (polygon.length === 2) return Array.from({ length: steps + 1 }, (_, index) => interpolate(polygon[0], polygon[1], index / steps));
+  const center = polygon.reduce((sum, point) => sum.map((value, index) => value + point[index] / polygon.length) as Offsets, [0, 0, 0] as Offsets);
+  const result = [center];
+  const edgeSteps = steps > 3 ? 2 : 1;
+  polygon.forEach((start, index) => {
+    for (let step = 0; step < edgeSteps; step++) {
+      const point = interpolate(start, polygon[(index + 1) % polygon.length], step / edgeSteps);
+      result.push(point);
     }
-  }
+  });
   return result;
 }
 
-function vertices(normals: Point[], offsets: number[]): Point[] {
-  return normals.map((normal, index) => {
-    const next = (index + 1) % 3;
-    return lineIntersection(normal, offsets[index], normals[next], offsets[next]);
-  });
+function normalAngle(normal: Point): number {
+  return ((Math.atan2(normal.y, normal.x) % PERIOD) + PERIOD) % PERIOD;
 }
 
-// 2009e: sample source triangles with fixed actual edge reaches, then union
-// their corner-cone portions. Do not clip the ordinary AB envelope at a gap.
-export function sampleRestrictedAbSources(role: AbUnionRegionDefinition, quality: 'preview' | 'full'): RestrictedAbSources {
-  const slot = `${role.index}:${quality}`;
-  const key = abUnionRegionKey(role);
+// 2009e: restrict the source triangles before taking their union. At fixed
+// orientation, sample the feasible support-offset polytope directly so exact
+// and almost-exact reach sums do not depend on a lucky slack-grid hit.
+export function sampleRestrictedAbSources(
+  role: AbUnionRegionDefinition,
+  quality: 'preview' | 'full',
+  verifiedSource?: readonly Point[] | null,
+): RestrictedAbSources {
+  const seed = verifiedSource && isRestrictedAbSource(role, verifiedSource) ? verifiedSource : null;
+  const seedAngle = seed ? normalAngle({ x: seed[1].y - seed[0].y, y: seed[0].x - seed[1].x }) : null;
+  const slot = role.index + ':' + quality;
+  const key = abUnionRegionKey(role) + ':' + seedAngle;
   const cached = cache.get(slot);
   if (cached?.key === key) return cached.result;
   const triangles: Point[][] = [];
@@ -54,11 +83,11 @@ export function sampleRestrictedAbSources(role: AbUnionRegionDefinition, quality
     return result;
   };
   const { a, b } = role;
-  if (![a, b].every(Number.isFinite) || a < 0 || b < 0 || a * a + a * b + b * b > 1) return finish('No sources: infeasible anchor pair');
+  if (![a, b].every(Number.isFinite) || a < 0 || b < 0 || a * a + a * b + b * b > 1 + 2e-11) return finish('No sources: infeasible anchor pair');
   const exactA = role.restriction === 'in' || role.restriction === 'both';
   const exactB = role.restriction === 'out' || role.restriction === 'both';
   if (a >= 1 || b >= 1 || (exactA && a === 0) || (exactB && b === 0)) return finish('No sources: strict vertex containment is impossible');
-  if ((role.criticality === 'non-supercritical' && a + b > 1 + 1e-12) || (role.criticality === 'supercritical' && exactA && exactB && a + b <= 1)) return finish('No sources: boundary demands conflict with the case restriction');
+  if ((role.criticality === 'non-supercritical' && a + b > 1 + 2e-11) || (role.criticality === 'supercritical' && exactA && exactB && a + b <= 1 + SOURCE_INTERIOR_MARGIN)) return finish('No sources: boundary demands conflict with the case restriction');
   const vertex = HEXAGON_VERTICES[role.index];
   const previousEdge = edgeVector(mod6(role.index - 1));
   const inward = { x: -previousEdge.x, y: -previousEdge.y };
@@ -67,37 +96,69 @@ export function sampleRestrictedAbSources(role: AbUnionRegionDefinition, quality
   const anchorB = pointOnEdge(role.index, b);
   const thetaSteps = quality === 'preview' ? 60 : 240;
   const slackSteps = quality === 'preview' ? 3 : 7;
-  for (let thetaIndex = 0; thetaIndex < thetaSteps; thetaIndex++) {
-    const theta = thetaIndex * 2 * Math.PI / (3 * thetaSteps);
-    const normals = Array.from({ length: 3 }, (_, index) => ({ x: Math.cos(theta + 2 * Math.PI * index / 3), y: Math.sin(theta + 2 * Math.PI * index / 3) }));
-    const lower = normals.map((normal) => Math.max(dot(normal, vertex), dot(normal, anchorA), dot(normal, anchorB)));
-    const slack = H - lower.reduce((sum, offset) => sum + offset, 0);
-    if (slack < -2e-8) continue;
-    const activeA = normals.flatMap((normal, index) => dot(normal, inward) > 1e-8 && Math.abs(lower[index] - dot(normal, anchorA)) < 4e-8 ? [index] : []);
-    const activeB = normals.flatMap((normal, index) => dot(normal, outward) > 1e-8 && Math.abs(lower[index] - dot(normal, anchorB)) < 4e-8 ? [index] : []);
-    const fixedSets = exactA && exactB ? activeA.flatMap((first) => activeB.map((second) => [first, second]))
-      : exactA ? activeA.map((index) => [index]) : exactB ? activeB.map((index) => [index]) : [[]];
+  const angles = Array.from({ length: thetaSteps }, (_, index) => index * PERIOD / thetaSteps);
+  if (a > 0 && b > 0) {
+    // A side through both anchors is an isolated orientation. Including it
+    // adds valid sources without treating a near-one demand sum as equality.
+    angles.push(normalAngle({ x: anchorA.y - anchorB.y, y: anchorB.x - anchorA.x }));
+  }
+  if (seedAngle !== null) angles.push(seedAngle);
+  angles.sort((first, second) => first - second);
+  const strictPoints = [vertex, ...role.requiredInteriorPoints];
+  for (const [angleIndex, theta] of angles.entries()) {
+    if (angleIndex > 0 && theta - angles[angleIndex - 1] < 1e-13) continue;
+    const normals = [0, 1, 2].map((index) => ({ x: Math.cos(theta + PERIOD * index), y: Math.sin(theta + PERIOD * index) }));
+    const atVertex = normals.map((normal) => dot(normal, vertex));
+    const atA = normals.map((normal) => dot(normal, anchorA));
+    const atB = normals.map((normal) => dot(normal, anchorB));
+    const lower = normals.map((normal, index) => Math.max(atA[index], atB[index], ...strictPoints.map((point) => dot(normal, point) + SOURCE_INTERIOR_MARGIN + 1e-12))) as Offsets;
+    const p = normals.map((normal) => dot(normal, inward));
+    const q = normals.map((normal) => dot(normal, outward));
+    const positiveA = [0, 1, 2].filter((index) => p[index] > 1e-12);
+    const positiveB = [0, 1, 2].filter((index) => q[index] > 1e-12);
+    const activeA = positiveA.filter((index) => atA[index] >= lower[index] - OFFSET_TOLERANCE);
+    const activeB = positiveB.filter((index) => atB[index] >= lower[index] - OFFSET_TOLERANCE);
+    const fixedSets: Array<Array<[number, number]>> = exactA && exactB ? activeA.flatMap((first) => activeB.map((second) => [[first, atA[first]], [second, atB[second]]] as Array<[number, number]>))
+      : exactA ? activeA.map((index) => [[index, atA[index]]]) : exactB ? activeB.map((index) => [[index, atB[index]]]) : [[]];
+    const cuts = positiveA.flatMap((first) => positiveB.map((second): OffsetCut => {
+      const coefficients: Offsets = [0, 0, 0];
+      coefficients[first] += q[second];
+      coefficients[second] += p[first];
+      const sum = role.criticality === 'supercritical' ? 1 + SOURCE_INTERIOR_MARGIN + 1e-12 : 1;
+      return { coefficients, bound: p[first] * q[second] * sum + q[second] * atVertex[first] + p[first] * atVertex[second] };
+    }));
+    const seen = new Set<string>();
     for (const fixed of fixedSets) {
-      // If both endpoints touch the same support side, two offsets remain free.
-      const free = [0, 1, 2].filter((index) => !fixed.includes(index));
-      for (const extra of compositions(Math.max(0, slack), free.length, free.length === 3 ? Math.max(3, Math.floor(slackSteps / 2)) : slackSteps)) {
-        const offsets = [...lower];
-        free.forEach((index, position) => { offsets[index] += extra[position]; });
-        const vertexMargins = normals.map((normal, index) => offsets[index] - dot(normal, vertex));
-        if (vertexMargins.some((margin) => margin <= 2e-7)) continue;
-        const reach = (direction: Point) => Math.min(...normals.map((normal, index) => {
-          const derivative = dot(normal, direction);
-          return derivative > 1e-9 ? vertexMargins[index] / derivative : Infinity;
-        }));
-        const actualA = reach(inward);
-        const actualB = reach(outward);
-        if (actualA < a - 2e-8 || actualB < b - 2e-8 || (exactA && Math.abs(actualA - a) > 2e-5) || (exactB && Math.abs(actualB - b) > 2e-5)) continue;
-        if (role.criticality === 'non-supercritical' && actualA + actualB > 1 + 1e-9) continue;
-        if (role.criticality === 'supercritical' && actualA + actualB <= 1 + 1e-9) continue;
-        if (role.requiredInteriorPoints.some((point) => normals.some((normal, index) => offsets[index] - dot(normal, point) <= 2e-7))) continue;
-        triangles.push(vertices(normals, offsets));
+      const base = [...lower] as Offsets;
+      const fixedValues = new Map<number, number>();
+      let consistent = true;
+      for (const [index, value] of fixed) {
+        if (fixedValues.has(index) && Math.abs(fixedValues.get(index)! - value) > OFFSET_TOLERANCE) consistent = false;
+        fixedValues.set(index, value);
+        base[index] = value;
+      }
+      if (!consistent) continue;
+      const free = [0, 1, 2].filter((index) => !fixedValues.has(index));
+      const slack = H - base.reduce((sum, offset) => sum + offset, 0);
+      if (slack < -OFFSET_TOLERANCE) continue;
+      const simplex = compactPolygon(free.map((index) => {
+        const point = [...base] as Offsets;
+        point[index] += slack;
+        return point;
+      }));
+      // A+B=min over support pairs of d_j/p_j+d_k/q_k. Hence <=1
+      // is a union of pair halfspaces; >1 is their reversed intersection.
+      const polygons = role.criticality === 'non-supercritical' ? cuts.map((cut) => clipOffsets(simplex, cut))
+        : role.criticality === 'supercritical' ? [cuts.reduce((polygon, cut) => clipOffsets(polygon, { coefficients: cut.coefficients.map((value) => -value) as Offsets, bound: -cut.bound }), simplex)]
+          : [simplex];
+      for (const polygon of polygons) for (const offsets of sampleOffsets(polygon, slackSteps)) {
+        const offsetKey = offsets.map((value) => Math.round(value * 1e12)).join(':');
+        if (seen.has(offsetKey)) continue;
+        seen.add(offsetKey);
+        const triangle = normals.map((normal, index) => lineIntersection(normal, offsets[index], normals[(index + 1) % 3], offsets[(index + 1) % 3]));
+        if (isRestrictedAbSource(role, triangle)) triangles.push(triangle);
       }
     }
   }
-  return finish(triangles.length ? `${triangles.length} sampled sources` : 'No sources found at this resolution');
+  return finish(triangles.length ? triangles.length + ' sampled sources' : 'No sources found at this resolution');
 }

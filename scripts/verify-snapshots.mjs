@@ -13,7 +13,8 @@ try {
   const { parseFreeSnapshot, formatFreeSnapshot } = await server.ssrLoadModule('/src/modes/free/snapshot.ts');
   const { createDefaultFreeState, createDefaultTargetTPoints } = await server.ssrLoadModule('/src/freeGeometry.ts');
   const { CORE_CASE_POINT_IDS } = await server.ssrLoadModule('/src/coreCase.ts');
-  const { createDefaultStrategy3State, sanitizeStrategy3State, strategy3EdgeDots } = await server.ssrLoadModule('/src/strategy3/state.ts');
+  const { createDefaultStrategy3State, createDefaultStrategy3SumConstraints, sanitizeStrategy3State,
+    strategy3EdgeDots, strategy3SumConstraints } = await server.ssrLoadModule('/src/strategy3/state.ts');
   const { prepareStrategy3Restore } = await server.ssrLoadModule('/src/strategy3/restore.ts');
   const controller = {
     version: 8,
@@ -53,6 +54,11 @@ try {
   assert.deepEqual(defaultController.strategy3.d, defaultModes.d);
   assert.notEqual(defaultModes.bc.layouts.seven, defaultModes.bc.layouts.eight);
   assert.notEqual(defaultModes.bc.layouts.seven, defaultModes.d.layouts.seven);
+  const defaultSums = createDefaultStrategy3SumConstraints();
+  assert.deepEqual(defaultSums, { sumConstraintModes: Array(6).fill('none'), fixedSums: Array(6).fill(null), epsilon: 1e-6 });
+  for (const mode of ['bc', 'd', 'f']) assert.deepEqual(strategy3SumConstraints(defaultModes, mode), defaultSums);
+  assert.notEqual(defaultModes.bc.sumConstraints.seven, defaultModes.bc.sumConstraints.eight);
+  assert.notEqual(defaultModes.bc.sumConstraints.seven.fixedSums, defaultModes.d.sumConstraints.seven.fixedSums);
   for (const version of [8, 9, 10, 11]) {
     for (const shapeMode of ['triangle', 'circle', 'local-c', 'free', 'ab-union', 'ab-hull-debug',
       'max-area', 'area-conj', 'core-case', 'strategy3-bc', 'strategy3-d',
@@ -62,6 +68,7 @@ try {
       assert.equal(snapshot.strategy3.dragBehavior, 'stop');
       for (const mode of ['bc', 'd', 'f']) {
         assert.deepEqual(snapshot.strategy3[mode].regionVisible, Array(6).fill(true));
+        assert.deepEqual(strategy3SumConstraints(snapshot.strategy3, mode), defaultSums);
       }
       assert.deepEqual(parseControllerSnapshot(formatControllerSnapshot(snapshot)), snapshot);
     }
@@ -270,7 +277,7 @@ try {
   assert.ok(constructD({ a: supplierInputs.roles[0].a, epsilon: supplierInputs.capacities[1].radial,
     beta: supplierInputs.roles[5].b }).conditions.every(({ ok }) => ok));
   const repairedSupplier = prepareStrategy3Restore(missingSupplier);
-  assert.deepEqual(repairedSupplier.resets, [{ mode: 'd', layout: 'eight',
+  assert.deepEqual(repairedSupplier.resets, [{ mode: 'd', layout: 'eight', action: 'boundary-reset',
     reasons: ['V0: no feasible restricted source triangle was found.'] }],
   'restore rejects missing actual suppliers even when boundary and witness inequalities pass');
   assert.deepEqual(repairedSupplier.state, defaultModes);
@@ -299,6 +306,83 @@ try {
     coreGraphDisabledPointIds: ['Q0'], coreGraphShowDisk: false });
   assert.deepEqual(prepareStrategy3Restore(legacyF.strategy3), { state: legacyF.strategy3, resets: [] },
     'valid migrated F parameters and selections survive feasibility preflight');
+
+  const withoutSumConstraints = structuredClone(modeState);
+  for (const mode of ['bc', 'd', 'f']) delete withoutSumConstraints[mode].sumConstraints;
+  const oldSumState = readController({ version: 11, strategy3: withoutSumConstraints }).strategy3;
+  for (const mode of ['bc', 'd', 'f']) assert.deepEqual(strategy3SumConstraints(oldSumState, mode), defaultSums);
+  const rowSum = (edges, index) => 1 - edges[(index + 5) % 6].right + edges[index].left;
+  const lockedState = createDefaultStrategy3State();
+  lockedState.bc.layouts.seven[1] = { left: 0.65, right: 0.65, split: false };
+  const bcSums = lockedState.bc.sumConstraints.seven;
+  bcSums.epsilon = 0.05;
+  bcSums.sumConstraintModes[0] = 'current';
+  bcSums.fixedSums[0] = rowSum(lockedState.bc.layouts.seven, 0);
+  bcSums.sumConstraintModes[1] = 'one';
+  bcSums.fixedSums[1] = 1;
+  lockedState.d.sumConstraints.eight.epsilon = 0.03;
+  lockedState.d.sumConstraints.eight.sumConstraintModes[1] = 'current';
+  lockedState.d.sumConstraints.eight.fixedSums[1] = rowSum(lockedState.d.layouts.eight, 1);
+  lockedState.f.sumConstraints.epsilon = 0.13;
+  lockedState.f.sumConstraints.sumConstraintModes[4] = 'one-plus-delta';
+  lockedState.f.sumConstraints.fixedSums[4] = 1 + lockedState.f.sumConstraints.epsilon;
+  assert.deepEqual(readController({ version: 11, strategy3: lockedState }).strategy3, lockedState);
+  assert.deepEqual(prepareStrategy3Restore(lockedState), { state: lockedState, resets: [] });
+  assert.equal(strategy3SumConstraints(lockedState, 'bc'), bcSums);
+  lockedState.bc.layout = 'eight';
+  assert.equal(strategy3SumConstraints(lockedState, 'bc'), lockedState.bc.sumConstraints.eight);
+  assert.deepEqual(strategy3SumConstraints(lockedState, 'bc'), defaultSums);
+  lockedState.bc.layout = 'seven';
+  const clonedLocks = sanitizeStrategy3State(lockedState);
+  clonedLocks.bc.sumConstraints.seven.fixedSums[0] = 0.5;
+  assert.equal(bcSums.fixedSums[0], rowSum(lockedState.bc.layouts.seven, 0), 'sum targets must not alias decoded input');
+
+  const staleLocks = structuredClone(lockedState);
+  staleLocks.bc.sumConstraints.seven.sumConstraintModes[3] = 'current';
+  staleLocks.bc.sumConstraints.seven.fixedSums[3] = rowSum(staleLocks.bc.layouts.seven, 3) + 0.1;
+  staleLocks.bc.sumConstraints.seven.fixedSums[4] = 0.4;
+  assert.deepEqual(readController({ version: 11, strategy3: staleLocks }).strategy3, staleLocks,
+    'decoding preserves captured current targets instead of recomputing them');
+  const repairedLocks = prepareStrategy3Restore(staleLocks);
+  assert.deepEqual(repairedLocks.state, lockedState, 'clear only inconsistent rows, retaining other locks, geometry, and epsilon');
+  assert.deepEqual(repairedLocks.resets.map(({ mode, layout, action }) => ({ mode, layout, action })),
+    [{ mode: 'bc', layout: 'seven', action: 'locks-cleared' }]);
+  assert.equal(repairedLocks.resets[0].reasons.length, 2);
+  const wrongOne = structuredClone(lockedState);
+  wrongOne.bc.sumConstraints.seven.fixedSums[1] = 1 - 1e-8;
+  const repairedOne = prepareStrategy3Restore(wrongOne);
+  assert.equal(repairedOne.state.bc.sumConstraints.seven.sumConstraintModes[1], 'none', 'one means exactly 1');
+  assert.equal(repairedOne.state.bc.sumConstraints.seven.sumConstraintModes[0], 'current');
+  const wrongEpsilon = structuredClone(lockedState);
+  wrongEpsilon.f.sumConstraints.epsilon = 0.12;
+  const repairedEpsilon = prepareStrategy3Restore(wrongEpsilon);
+  assert.equal(repairedEpsilon.state.f.sumConstraints.sumConstraintModes[4], 'none');
+  assert.equal(repairedEpsilon.state.f.sumConstraints.epsilon, 0.12);
+  assert.deepEqual(repairedEpsilon.state.f.edgeDots, lockedState.f.edgeDots);
+  const invalidLockedGeometry = structuredClone(lockedState);
+  invalidLockedGeometry.f.edgeDots[3] = { left: 0.8, right: 0.8, split: false };
+  const repairedLockedGeometry = prepareStrategy3Restore(invalidLockedGeometry);
+  assert.deepEqual(repairedLockedGeometry.state.f.sumConstraints,
+    { ...defaultSums, epsilon: 0.13 }, 'resetting geometry clears all its locks but retains epsilon');
+  assert.deepEqual(repairedLockedGeometry.state.bc, lockedState.bc);
+  assert.equal(repairedLockedGeometry.resets[0].action, 'boundary-reset');
+  for (const epsilon of [1e-6, 0.159999]) {
+    const bounded = createDefaultStrategy3State();
+    bounded.f.sumConstraints.epsilon = epsilon;
+    assert.equal(readController({ version: 11, strategy3: bounded }).strategy3.f.sumConstraints.epsilon, epsilon);
+  }
+  for (const malformed of [null, {}, { ...defaultSums, sumConstraintModes: [] },
+    { ...defaultSums, sumConstraintModes: ['unknown', ...Array(5).fill('none')] },
+    { ...defaultSums, fixedSums: [] }, { ...defaultSums, fixedSums: ['1', ...Array(5).fill(null)] },
+    { ...defaultSums, fixedSums: [2.1, ...Array(5).fill(null)] },
+    ...[null, '0.01', 0, 0.0000009, 0.16].map((epsilon) => ({ ...defaultSums, epsilon }))]) {
+    const invalidSettings = createDefaultStrategy3State();
+    invalidSettings.f.sumConstraints = malformed;
+    assert.throws(() => readController({ version: 11, strategy3: invalidSettings }));
+  }
+  for (const sumConstraints of [[], {}, { seven: defaultSums }]) {
+    assert.throws(() => readController({ version: 11, strategy3: { bc: { ...defaultModes.bc, sumConstraints } } }));
+  }
   const malformedStates = [null, { bc: { ...modeState.bc, layout: 'unknown' } },
     { f: { ...modeState.f, showDisk: 'true' } },
     { d: { ...modeState.d, disabledPointIds: ['D5'] } }];

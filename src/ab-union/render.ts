@@ -231,7 +231,7 @@ function prepareSourceMask(
   const key = `${abUnionRegionKey(definition)}:${JSON.stringify(witness ?? null)}`;
   const previous = cache.sourceMasks[definition.index];
   if (previous?.key === key && (previous.quality === 'full' || quality === 'preview')) return previous;
-  const sources = sampleRestrictedAbSources(definition, quality);
+  const sources = sampleRestrictedAbSources(definition, quality, witness);
   const triangles = witness ? [...sources.triangles, witness] : sources.triangles;
   // Rasterize a source union once; model composition never scans its triangles.
   cache.offctx.clearRect(0, 0, cache.size, cache.size);
@@ -263,7 +263,7 @@ function regionPixelColors(state: AbUnionState): Array<readonly [number, number,
     let red = 0, green = 0, blue = 0, alpha = 0;
     for (let index = 0; index < 6; index++) {
       if (!state.regionVisible[index] || (bits & (1 << index)) === 0) continue;
-      const sourceAlpha = highlighting ? state.activeRegions[index] ? 0.3 : 0.045 : 0.16;
+      const sourceAlpha = highlighting ? state.activeRegions[index] ? 0.36 : 0.14 : 0.24;
       const remaining = alpha * (1 - sourceAlpha);
       const nextAlpha = sourceAlpha + remaining;
       red = (REGION_RGB[index][0] * sourceAlpha + red * remaining) / nextAlpha;
@@ -690,14 +690,14 @@ function drawRegionBoundary(ctx: CanvasRenderingContext2D, cache: MaskCache, reg
   ctx.restore();
 }
 
-function drawActiveBoundaries(
+function drawRegionBoundaries(
   ctx: CanvasRenderingContext2D,
   cache: MaskCache,
   state: AbUnionState,
-  visibleOnly = false,
+  allVisible = false,
 ): void {
   for (let i = 0; i < 6; i++) {
-    if (state.activeRegions[i] && (!visibleOnly || state.regionVisible[i])) drawRegionBoundary(ctx, cache, i);
+    if (allVisible ? state.regionVisible[i] : state.activeRegions[i]) drawRegionBoundary(ctx, cache, i);
   }
 }
 
@@ -883,7 +883,7 @@ export function renderAbUnionRegions(
     sourceMasks, colorByRegion: options.colorByRegion, showUncovered: options.showUncovered,
   });
   ctx.drawImage(cache.offscreen, 0, 0, config.canvasSize, config.canvasSize);
-  if (options.drawBoundaries !== false) drawActiveBoundaries(ctx, cache, state, sourceMasks !== undefined);
+  if (options.drawBoundaries !== false) drawRegionBoundaries(ctx, cache, state, sourceMasks !== undefined);
   return { uncoveredCount, regions: sourceMasks?.map(({ count, status }) => ({ count, status })) ?? [] };
 }
 
@@ -927,7 +927,7 @@ export function renderAbUnion(
   }
   drawCenterShape(ctx, state, triangleState, localCs);
   drawFarPair(ctx, farPair);
-  drawActiveBoundaries(ctx, cache, state);
+  drawRegionBoundaries(ctx, cache, state);
   drawSelectedMarkSources(ctx, state, triangleState);
   drawPointsAndVertices(ctx, state);
   drawFMarkDistance(ctx, state, currentFMarkDistance);
@@ -956,10 +956,12 @@ export function renderAbUnion(
 export function renderAbUnionBoundaryControls(
   ctx: CanvasRenderingContext2D,
   state: AbUnionState,
-  options: { showFMarkTriangle?: boolean } = {},
+  options: { showFMarkTriangle?: boolean; readOnly?: boolean } = {},
 ): AbUnionBoundaryRenderResult {
-  normalizeAbUnionState(state);
-  enforceAbUnionLocks(state);
+  if (!options.readOnly) {
+    normalizeAbUnionState(state);
+    enforceAbUnionLocks(state);
+  }
   const currentFMarkDistance = fMarkDistance(state);
   const currentFMarkTriangle = options.showFMarkTriangle === false ? null : fMarkTriangle(state);
   drawPointsAndVertices(ctx, state);

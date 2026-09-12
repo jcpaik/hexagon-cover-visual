@@ -100,6 +100,12 @@ canvas {
   margin: 4px 0;
 }
 
+/* Keep click targets steady when a focused number commits on blur. */
+#strategy3-controls [data-strategy3-movement-status] {
+  height: 4.2em;
+  overflow-y: auto;
+}
+
 #strategy3-controls [aria-pressed="true"] {
   border-color: #475569;
   background: #e2e8f0;
