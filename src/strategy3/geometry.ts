@@ -153,7 +153,7 @@ function result(
 
 // 2612, Theorem 5.1: these five coordinates specify the displayed set;
 // only deriveBC checks the original-triangle hypotheses behind the enclosure.
-export function buildBC(parameters: BCParameters, disabledIds?: PointIds): WitnessEvaluation {
+export function constructBC(parameters: BCParameters, disabledIds?: PointIds) {
   const disabled = asSet(disabledIds);
   const { left, right, radial } = parameters;
   const points = [
@@ -167,11 +167,16 @@ export function buildBC(parameters: BCParameters, disabledIds?: PointIds): Witne
     { id: 'radial', label: '0 < d2, d3, d4 < 1', ok: radial.every((d) => d > 0 && d < 1) },
   ];
   const segments = [{ id: 'gap', label: 'selected gap', start: edgePoint(0, left), end: edgePoint(0, right) }];
+  return { points, conditions, segments };
+}
+
+export function buildBC(parameters: BCParameters, disabledIds?: PointIds): WitnessEvaluation {
+  const { points, conditions, segments } = constructBC(parameters, disabledIds);
   return result(points, parameters, conditions, segments, true);
 }
 
 // 2612, Theorem 6.1. Endpoint and coincident-point cases are included.
-export function buildD(parameters: DParameters, disabledIds?: PointIds): WitnessEvaluation {
+export function constructD(parameters: DParameters, disabledIds?: PointIds) {
   const disabled = asSet(disabledIds);
   const { a, epsilon, beta } = parameters;
   const s = a + epsilon;
@@ -188,7 +193,12 @@ export function buildD(parameters: DParameters, disabledIds?: PointIds): Witness
     { id: 'order', label: 'a ≤ ε', ok: a <= epsilon },
     { id: 'ratio', label: 'β ≤ ε / (a + ε)', ok: s > 0 && beta <= epsilon / s },
   ];
-  return result(points, parameters, conditions, [{ id: 'gap', label: 'boundary witnesses', start: y(a), end: y(1 - beta) }]);
+  return { points, conditions, segments: [{ id: 'gap', label: 'boundary witnesses', start: y(a), end: y(1 - beta) }] };
+}
+
+export function buildD(parameters: DParameters, disabledIds?: PointIds): WitnessEvaluation {
+  const { points, conditions, segments } = constructD(parameters, disabledIds);
+  return result(points, parameters, conditions, segments);
 }
 
 // Clip a segment against the three closed halfplanes of a unit triangle.
@@ -286,9 +296,9 @@ export function deriveD(triangles: readonly FreeTriangleState[], disabledIds?: P
 // The frontier mode retains the selected first roots. Newton mode uses exactly
 // one tangent step from their common junction, as in the paper's Appendix E
 // (Newton inner reduction); neither mode samples or uses a Core fallback.
-export function evaluateNinePoint(
+export function constructNinePoint(
   a: number, b: number, enabledIds?: PointIds, pointConstruction: NinePointConstruction = 'frontier',
-): NinePointEvaluation {
+): Omit<NinePointEvaluation, 'enabledPointCount' | 'triangle' | 'side' | 'status'> {
   const enabled = enabledIds === undefined ? new Set<string>(NINE_POINT_IDS) : asSet(enabledIds);
   const disabled = new Set(NINE_POINT_IDS.filter((id) => !enabled.has(id)));
   const rho = a * a + a * b + b * b;
@@ -335,9 +345,17 @@ export function evaluateNinePoint(
     const point = witness(id, label, coordinates.get(id) ?? null, disabled);
     return symbol ? { ...point, symbol } : point;
   });
+  return { pointConstruction, a, b, domainOk, domainStatus, cStar, diskRadius, circles, points, strictGap: a + b - 1, localRegionVariant: 'exact' };
+}
+
+export function evaluateNinePoint(
+  a: number, b: number, enabledIds?: PointIds, pointConstruction: NinePointConstruction = 'frontier',
+): NinePointEvaluation {
+  const construction = constructNinePoint(a, b, enabledIds, pointConstruction);
+  const { points, domainOk, domainStatus, cStar, diskRadius, circles, strictGap, localRegionVariant } = construction;
   const fitted = fitWitnesses(points);
   const missing = points.filter((point) => point.enabled && point.point === null).map((point) => point.id);
   const status = !domainOk ? domainStatus : fitted.enabledPointCount === 0 ? 'no points selected'
     : missing.length > 0 ? `unavailable at numerical precision: ${missing.join(', ')}` : 'ready';
-  return { pointConstruction, a, b, domainOk, domainStatus, cStar, diskRadius, circles, points, ...fitted, strictGap: a + b - 1, localRegionVariant: 'exact', status };
+  return { pointConstruction, a, b, domainOk, domainStatus, cStar, diskRadius, circles, points, ...fitted, strictGap, localRegionVariant, status };
 }

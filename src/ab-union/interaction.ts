@@ -358,7 +358,7 @@ export function setupAbUnionInteraction(
   onLocalCChange: (index: number, value: number) => void,
   render: () => void,
   callbacks: AbUnionInteractionCallbacks = {},
-): void {
+): { cancel: () => void } {
   let interaction: PointerInteraction = { kind: 'idle' };
   let activePointerId: number | null = null;
   let activePointerType = 'mouse';
@@ -600,4 +600,5 @@ export function setupAbUnionInteraction(
     activePointerId = null;
     activePointerType = 'mouse';
   });
+  return { cancel: stop };
 }

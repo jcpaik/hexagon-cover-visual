@@ -3,6 +3,7 @@ import { NINE_POINT_IDS, type NinePointConstruction } from './geometry';
 
 export type Strategy3Mode = 'bc' | 'd' | 'f';
 export type Strategy3GapLayout = 'seven' | 'eight';
+export type Strategy3DragBehavior = 'stop' | 'adjust-neighbors';
 
 interface GapConstructionState {
   layout: Strategy3GapLayout;
@@ -12,6 +13,7 @@ interface GapConstructionState {
 }
 
 export interface Strategy3State {
+  dragBehavior: Strategy3DragBehavior;
   bc: GapConstructionState;
   d: GapConstructionState;
   f: {
@@ -31,6 +33,7 @@ function dots(values: Array<number | [number, number]>): AbUnionEdgeDots[] {
 
 export function createDefaultStrategy3State(): Strategy3State {
   return {
+    dragBehavior: 'stop',
     bc: {
       layout: 'seven',
       layouts: {
@@ -139,6 +142,10 @@ export function sanitizeStrategy3State(value: unknown): Strategy3State {
   const defaults = createDefaultStrategy3State();
   if (value === undefined) return defaults;
   const raw = object(value, 'state');
+  const dragBehavior = raw.dragBehavior === undefined ? 'stop' : raw.dragBehavior;
+  if (dragBehavior !== 'stop' && dragBehavior !== 'adjust-neighbors') {
+    throw new Error('Invalid Strategy 3 drag behavior.');
+  }
   const f = raw.f === undefined ? defaults.f : object(raw.f, 'F construction');
   if (typeof f.showDisk !== 'boolean') throw new Error('Invalid Strategy 3 disk visibility.');
   // Earlier snapshots predate the selector and plotted the exact frontier.
@@ -147,6 +154,7 @@ export function sanitizeStrategy3State(value: unknown): Strategy3State {
     throw new Error('Invalid Strategy 3 point construction.');
   }
   return {
+    dragBehavior,
     bc: sanitizeGapConstruction(raw.bc, defaults.bc, 0, ['M0', 'G0', 'G1', 'D2', 'D3', 'D4']),
     d: sanitizeGapConstruction(raw.d, defaults.d, 5, ['O', 'PT', 'G0', 'G1']),
     f: {

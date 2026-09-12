@@ -22,12 +22,10 @@ export interface BoundaryEvaluation {
   witness: WitnessEvaluation | NinePointEvaluation;
 }
 
-export function evaluateStrategy3Boundary(
+export function strategy3BoundaryInputs(
   mode: 'bc' | 'd' | 'f',
   edgeDots: readonly AbUnionEdgeDots[],
-  disabledIds: readonly string[] = [],
-  pointConstruction: NinePointConstruction = 'frontier',
-): BoundaryEvaluation {
+) {
   const roles = edgeDots.map((edge, index): BoundaryRole => {
     const previous = edgeDots[(index + 5) % 6];
     return {
@@ -53,11 +51,29 @@ export function evaluateStrategy3Boundary(
     { id: 'strict-traces', group: 'source', label: 'Strict-containment endpoint requirements: a,b < 1 and exact traces > 0', ok: roles.every((role) => role.a < 1 && role.b < 1 && (!(role.restriction === 'in' || role.restriction === 'both') || role.a > 0) && (!(role.restriction === 'out' || role.restriction === 'both') || role.b > 0)) },
     { id: 'nonsupercritical-demands', group: 'source', label: 'Nonsupercritical source roles have lower demands a + b ≤ 1', ok: roles.every((role) => role.criticality !== 'non-supercritical' || role.a + role.b <= 1 + 1e-12) },
   ];
-  let witness: WitnessEvaluation | NinePointEvaluation;
   if (mode === 'bc') {
     // The shared b5 handle is a lower demand, not the actual source reach B5.
     // Failure of this sufficient selected bound does not disprove the actual tail hypothesis.
     sourceConditions.push({ id: 'selected-tail', group: 'source', label: 'Selected tail bound b5 ≥ b0 / 2 (lower-demand check)', ok: roles[5].b >= roles[0].b / 2 - 1e-12 });
+  } else if (mode === 'f') {
+    const { a, b } = roles[4];
+    sourceConditions.push(
+      { id: 'critical-demands', group: 'source', label: 'Selected demands at V4 satisfy a4 + b4 > 1', ok: a + b > 1 },
+      { id: 'common-pair', group: 'source', label: 'All rows dominate the common pair (1 − b4, 1 − a4)', ok: roles.every((role) => role.a >= 1 - b - 1e-12 && role.b >= 1 - a - 1e-12) },
+    );
+  }
+  return { roles, capacities, sourceConditions };
+}
+
+export function evaluateStrategy3Boundary(
+  mode: 'bc' | 'd' | 'f',
+  edgeDots: readonly AbUnionEdgeDots[],
+  disabledIds: readonly string[] = [],
+  pointConstruction: NinePointConstruction = 'frontier',
+): BoundaryEvaluation {
+  const { roles, capacities, sourceConditions } = strategy3BoundaryInputs(mode, edgeDots);
+  let witness: WitnessEvaluation | NinePointEvaluation;
+  if (mode === 'bc') {
     witness = buildBC({ left: edgeDots[0].left, right: edgeDots[0].right, radial: [capacities[2].radial ?? NaN, capacities[3].radial ?? NaN, capacities[4].radial ?? NaN] }, disabledIds);
     witness.points.forEach((point) => {
       if (point.id.startsWith('D')) point.label = `capacity-derived radial point on r${point.id.slice(1)}`;
@@ -70,10 +86,6 @@ export function evaluateStrategy3Boundary(
   } else {
     const { a, b } = roles[4];
     witness = evaluateNinePoint(a, b, NINE_POINT_IDS.filter((id) => !disabledIds.includes(id)), pointConstruction);
-    sourceConditions.push(
-      { id: 'critical-demands', group: 'source', label: 'Selected demands at V4 satisfy a4 + b4 > 1', ok: a + b > 1 },
-      { id: 'common-pair', group: 'source', label: 'All rows dominate the common pair (1 − b4, 1 − a4)', ok: roles.every((role) => role.a >= 1 - b - 1e-12 && role.b >= 1 - a - 1e-12) },
-    );
   }
   const conditions = [...('conditions' in witness ? witness.conditions : [
     { id: 'f-domain', group: 'geometry' as const, label: witness.domainStatus, ok: witness.domainOk },

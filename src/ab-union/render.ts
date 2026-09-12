@@ -70,6 +70,7 @@ interface AbUnionRenderOptions {
 
 interface AbUnionRegionRenderOptions {
   sourceRegions?: readonly AbUnionRegionDefinition[];
+  sourceWitnesses?: readonly (readonly Point[] | null)[];
   sourceQuality?: 'preview' | 'full';
   colorByRegion?: boolean;
   showUncovered?: boolean;
@@ -225,15 +226,17 @@ function prepareSourceMask(
   cache: MaskCache,
   definition: AbUnionRegionDefinition,
   quality: 'preview' | 'full',
+  witness?: readonly Point[] | null,
 ): SourceRegionMask {
-  const key = abUnionRegionKey(definition);
+  const key = `${abUnionRegionKey(definition)}:${JSON.stringify(witness ?? null)}`;
   const previous = cache.sourceMasks[definition.index];
   if (previous?.key === key && (previous.quality === 'full' || quality === 'preview')) return previous;
   const sources = sampleRestrictedAbSources(definition, quality);
+  const triangles = witness ? [...sources.triangles, witness] : sources.triangles;
   // Rasterize a source union once; model composition never scans its triangles.
   cache.offctx.clearRect(0, 0, cache.size, cache.size);
   cache.offctx.beginPath();
-  for (const triangle of sources.triangles) {
+  for (const triangle of triangles) {
     triangle.forEach((point, index) => {
       const x = cache.center + cache.scale * point.x;
       const y = cache.center - cache.scale * point.y;
@@ -246,7 +249,10 @@ function prepareSourceMask(
   cache.offctx.fill();
   const pixels = cache.offctx.getImageData(0, 0, cache.size, cache.size).data;
   const coverage = Uint8Array.from(cache.pixelIndex, (pixel) => pixels[pixel * 4 + 3] >= 128 ? 1 : 0);
-  const prepared = { key, quality, coverage, count: sources.triangles.length, status: sources.status };
+  const prepared = {
+    key, quality, coverage, count: triangles.length,
+    status: witness ? `${sources.triangles.length} sampled sources + verified source` : sources.status,
+  };
   cache.sourceMasks[definition.index] = prepared;
   return prepared;
 }
@@ -870,8 +876,8 @@ export function renderAbUnionRegions(
   options: AbUnionRegionRenderOptions = {},
 ): { uncoveredCount: number; regions: Array<{ count: number; status: string }> } {
   const cache = getMaskCache(config.canvasSize);
-  const sourceMasks = options.sourceRegions?.map((definition) =>
-    prepareSourceMask(cache, definition, options.sourceQuality ?? 'full'),
+  const sourceMasks = options.sourceRegions?.map((definition, index) =>
+    prepareSourceMask(cache, definition, options.sourceQuality ?? 'full', options.sourceWitnesses?.[index]),
   );
   const uncoveredCount = buildMask(cache, state, options.localRegionVariant ?? 'exact', {
     sourceMasks, colorByRegion: options.colorByRegion, showUncovered: options.showUncovered,

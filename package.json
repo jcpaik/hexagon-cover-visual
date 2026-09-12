@@ -13,7 +13,9 @@
     "verify:snapshots": "node scripts/verify-snapshots.mjs",
     "verify:strategy3": "node scripts/verify-strategy3.mjs",
     "verify:strategy3-boundary": "node scripts/verify-strategy3-boundary.mjs",
-    "verify": "npm run verify:ab-union && npm run verify:snapshots && npm run verify:cunion && npm run verify:strategy3 && npm run verify:strategy3-boundary"
+    "verify:restricted-sources": "node scripts/verify-restricted-sources.mjs",
+    "verify:strategy3-movement": "node scripts/verify-strategy3-movement.mjs",
+    "verify": "npm run verify:ab-union && npm run verify:snapshots && npm run verify:cunion && npm run verify:strategy3 && npm run verify:strategy3-boundary && npm run verify:restricted-sources && npm run verify:strategy3-movement"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

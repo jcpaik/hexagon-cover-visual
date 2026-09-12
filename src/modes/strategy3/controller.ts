@@ -6,9 +6,11 @@ import { escapeHtml } from '../../app/format';
 import { config, mathToCanvas } from '../../coords';
 import { drawHexagon, drawHexagonLines, HEXAGON_VERTICES } from '../../hexagon';
 import { evaluateStrategy3Boundary, type BoundaryEvaluation, type BoundaryRole } from '../../strategy3/boundary';
+import { checkStrategy3Feasibility, projectStrategy3Move } from '../../strategy3/feasibility';
 import { drawWitnessConstruction } from '../../strategy3/render';
+import { prepareStrategy3Restore } from '../../strategy3/restore';
 import {
-  createDefaultStrategy3State, sanitizeStrategy3State, strategy3EdgeDots,
+  createDefaultStrategy3State, strategy3EdgeDots,
   type Strategy3Mode, type Strategy3State,
 } from '../../strategy3/state';
 import type { ShapeMode, TriangleState } from '../../types';
@@ -39,6 +41,7 @@ export function createStrategy3Controller(deps: Dependencies) {
   let quality: 'preview' | 'full' = 'full';
   let frame: number | null = null;
   let pointerId: number | null = null;
+  let movementStatus = '';
   const evaluations: Partial<Record<Strategy3Mode, { key: string; sample: BoundaryEvaluation }>> = {};
   const adapters = { bc: createDefaultAbUnionState(), d: createDefaultAbUnionState(), f: createDefaultAbUnionState() };
   for (const adapter of Object.values(adapters)) adapter.autoOptimizeTheta = false;
@@ -68,10 +71,11 @@ export function createStrategy3Controller(deps: Dependencies) {
   function moveDot(adapter: AbUnionState, dot: AbUnionDotHandle, value: number): void {
     const active = mode();
     if (!active) return;
-    const edge = adapter.edgeDots[dot.edge];
-    const bounded = Math.max(0, Math.min(1, value));
-    if (dot.role === 'shared') edge.left = edge.right = bounded;
-    else edge[dot.role] = dot.role === 'left' ? Math.min(bounded, edge.right) : Math.max(bounded, edge.left);
+    const projected = projectStrategy3Move(active, adapter.edgeDots, dot, value, state.dragBehavior);
+    adapter.edgeDots = projected.edgeDots;
+    movementStatus = projected.blockedReason
+      ? `Movement limited: ${projected.blockedReason}`
+      : projected.adjustedNeighbors ? 'Neighboring dots adjusted to keep the construction feasible.' : '';
     if (active === 'f') state.f.edgeDots = adapter.edgeDots;
     else state[active].layouts[state[active].layout] = adapter.edgeDots;
   }
@@ -84,7 +88,7 @@ export function createStrategy3Controller(deps: Dependencies) {
     }
   }, true);
 
-  setupAbUnionInteraction(
+  const interaction = setupAbUnionInteraction(
     deps.canvas, () => enabled && mode() !== null, () => adapterFor(mode() ?? 'bc'),
     unusedTriangle, () => [], () => {}, requestRender,
     {
@@ -96,8 +100,11 @@ export function createStrategy3Controller(deps: Dependencies) {
 
   function finishDrag(): void {
     quality = 'full';
+    interaction.cancel();
     if (pointerId !== null && deps.canvas.hasPointerCapture(pointerId)) deps.canvas.releasePointerCapture(pointerId);
     pointerId = null;
+    if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
   }
 
   deps.canvas.addEventListener('pointerdown', (event) => {
@@ -113,7 +120,10 @@ export function createStrategy3Controller(deps: Dependencies) {
   }
 
   function setEnabled(next: boolean): void {
-    if (!next || enabledMode !== mode()) finishDrag();
+    if (!next || enabledMode !== mode()) {
+      finishDrag();
+      movementStatus = '';
+    }
     enabled = next;
     enabledMode = next ? mode() : null;
   }
@@ -129,7 +139,13 @@ export function createStrategy3Controller(deps: Dependencies) {
           ${(['seven', 'eight'] as const).map((layout) => `<button type="button" class="free-button" data-strategy3-layout="${layout}" aria-pressed="${state[active].layout === layout}">${layout === 'seven' ? '7 dots · one gap' : '8 dots · two gaps'}</button>`).join('')}
         </div>`}
         <p class="free-small-status">Drag the ${count} white boundary handles or edit their edge positions below. Witness coordinates update automatically. Click a vertex to highlight its region.</p>
-        <p class="free-small-status">Shared dots specify lower demands. Gap endpoints fix the actual adjacent reaches. Invalid case configurations remain editable.</p>
+        <p class="free-small-status">Shared dots specify lower demands. Gap endpoints fix the actual adjacent reaches. Movement preserves the case conditions and a source triangle in every restricted AB family.</p>
+        <fieldset class="free-toolbar"><legend>Boundary movement</legend>
+          <label><input type="radio" name="strategy3-drag-behavior" data-strategy3-drag-behavior value="stop"/>Stop that dot</label>
+          <label><input type="radio" name="strategy3-drag-behavior" data-strategy3-drag-behavior value="adjust-neighbors"/>Adjust neighboring dots</label>
+        </fieldset>
+        <p class="free-small-status" data-strategy3-movement-note></p>
+        <p class="free-small-status" data-strategy3-movement-status role="status"></p>
         ${active === 'f' ? `<p class="free-small-status">The reaches at V4 determine the nine points. The other handles change the regions and Case F checks.</p>
           <fieldset class="free-toolbar"><legend>F witness construction</legend>
             <label><input type="radio" name="strategy3-construction" data-strategy3-construction value="newton"/>Newton inner A, B, C</label>
@@ -141,7 +157,7 @@ export function createStrategy3Controller(deps: Dependencies) {
         <div class="ab-union-section-title">Boundary positions · t from Vi to Vi+1</div>
         ${edges.map((edge, index) => `<div class="ab-union-toolbar"><span>e${index}</span>
           ${(edge.split ? ['left', 'right'] as const : ['shared'] as const).map((role) => `<label>${role === 'shared' ? `b${index}/a${(index + 1) % 6}` : role === 'left' ? `b${index}` : `a${(index + 1) % 6}`}
-            <input class="ab-hull-debug-number" type="number" min="0" max="1" step="0.001" data-strategy3-edge="${index}" data-strategy3-role="${role}" aria-label="Edge ${index} ${role} position"/>
+            <input class="ab-hull-debug-number" type="number" min="0" max="1" step="0.001" data-strategy3-edge="${index}" data-strategy3-role="${role}" data-strategy3-owner="${key}" aria-label="Edge ${index} ${role} position"/>
           </label>`).join('')}</div>`).join('')}
         ${active === 'f' ? '<label class="free-small-status"><input type="checkbox" data-strategy3-disk/> Show comparison disk</label>' : ''}
         <div data-strategy3-readouts></div>
@@ -161,6 +177,13 @@ export function createStrategy3Controller(deps: Dependencies) {
     for (const input of deps.controls.querySelectorAll<HTMLInputElement>('[data-strategy3-construction]')) {
       input.checked = input.value === state.f.pointConstruction;
     }
+    for (const input of deps.controls.querySelectorAll<HTMLInputElement>('[data-strategy3-drag-behavior]')) {
+      input.checked = input.value === state.dragBehavior;
+    }
+    deps.controls.querySelector<HTMLElement>('[data-strategy3-movement-note]')!.textContent = state.dragBehavior === 'stop'
+      ? 'Other dots stay fixed. The selected dot stops at its feasible limit.'
+      : 'Linked boundary constraints push neighboring dots around the hexagon. Movement stops when the resulting triangles or construction would become infeasible.';
+    deps.controls.querySelector<HTMLElement>('[data-strategy3-movement-status]')!.textContent = movementStatus;
     for (const input of deps.controls.querySelectorAll<HTMLInputElement>('[data-ab-region-visible]')) {
       input.checked = state[active].regionVisible[Number(input.dataset.abRegionVisible)];
     }
@@ -200,10 +223,12 @@ export function createStrategy3Controller(deps: Dependencies) {
       evaluations[active] = { key, sample: evaluateStrategy3Boundary(active, adapter.edgeDots, state[active].disabledPointIds, construction) };
     }
     const sample = evaluations[active]!.sample;
+    const feasibility = checkStrategy3Feasibility(active, adapter.edgeDots);
     deps.ctx.clearRect(0, 0, config.canvasSize, config.canvasSize);
     drawHexagon(deps.ctx);
     const { regions } = renderAbUnionRegions(deps.ctx, adapter, {
-      sourceRegions: sample.roles, sourceQuality: quality, colorByRegion: true, showUncovered: false,
+      sourceRegions: sample.roles, sourceWitnesses: feasibility.sources,
+      sourceQuality: quality, colorByRegion: true, showUncovered: false,
     });
     drawHexagonLines(deps.ctx);
     deps.ctx.save();
@@ -228,7 +253,8 @@ export function createStrategy3Controller(deps: Dependencies) {
 
   function applyInput(input: HTMLInputElement): void {
     const active = mode();
-    if (!active || input.dataset.strategy3Edge === undefined || input.value.trim() === '') return;
+    if (!active || input.dataset.strategy3Edge === undefined || input.value.trim() === ''
+      || input.dataset.strategy3Owner !== panelKey || !panelKey.startsWith(`${active}:`)) return;
     const value = Number(input.value);
     const edge = Number(input.dataset.strategy3Edge);
     const role = input.dataset.strategy3Role;
@@ -246,6 +272,7 @@ export function createStrategy3Controller(deps: Dependencies) {
     const layout = event.target.closest<HTMLButtonElement>('[data-strategy3-layout]')?.dataset.strategy3Layout;
     if (layout !== 'seven' && layout !== 'eight') return;
     finishDrag();
+    movementStatus = '';
     state[active].layout = layout;
     adapters[active].activeRegions.fill(false);
     deps.render();
@@ -254,7 +281,13 @@ export function createStrategy3Controller(deps: Dependencies) {
     const active = mode();
     const input = event.target;
     if (!active || !(input instanceof HTMLInputElement)) return;
-    if (active === 'f' && input.dataset.strategy3Construction !== undefined) {
+    if (input.dataset.strategy3DragBehavior !== undefined) {
+      if (input.value !== 'stop' && input.value !== 'adjust-neighbors') return;
+      finishDrag();
+      movementStatus = '';
+      state.dragBehavior = input.value;
+      deps.render();
+    } else if (active === 'f' && input.dataset.strategy3Construction !== undefined) {
       if (input.value !== 'frontier' && input.value !== 'newton') return;
       state.f.pointConstruction = input.value;
       deps.render();
@@ -284,9 +317,10 @@ export function createStrategy3Controller(deps: Dependencies) {
     setEnabled,
     getState(): Strategy3State { return structuredClone(state); },
     restoreState(next: Strategy3State): void {
-      const restored = sanitizeStrategy3State(next);
+      const restored = prepareStrategy3Restore(next).state;
       finishDrag();
       state = restored;
+      movementStatus = '';
       panelKey = '';
       for (const adapter of Object.values(adapters)) adapter.activeRegions.fill(false);
     },

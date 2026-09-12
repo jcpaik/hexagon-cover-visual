@@ -14,6 +14,7 @@ try {
   const { createDefaultFreeState, createDefaultTargetTPoints } = await server.ssrLoadModule('/src/freeGeometry.ts');
   const { CORE_CASE_POINT_IDS } = await server.ssrLoadModule('/src/coreCase.ts');
   const { createDefaultStrategy3State, sanitizeStrategy3State, strategy3EdgeDots } = await server.ssrLoadModule('/src/strategy3/state.ts');
+  const { prepareStrategy3Restore } = await server.ssrLoadModule('/src/strategy3/restore.ts');
   const controller = {
     version: 8,
     shapeMode: 'triangle',
@@ -41,6 +42,8 @@ try {
     assert.equal(defaultController[key], false, `${key} defaults to false`);
   }
   const defaultModes = createDefaultStrategy3State();
+  assert.equal(defaultModes.dragBehavior, 'stop');
+  assert.equal(defaultController.strategy3.dragBehavior, 'stop');
   assert.equal(defaultController.strategy3.f.showDisk, true);
   assert.equal(defaultModes.f.pointConstruction, 'newton', 'new F sessions default to Newton');
   assert.equal(defaultController.strategy3.f.pointConstruction, 'frontier', 'legacy sessions retain the exact frontier');
@@ -56,6 +59,7 @@ try {
       version < 11 ? 'core-graph' : 'strategy3-f']) {
       const snapshot = readController({ version, shapeMode });
       assert.equal(snapshot.shapeMode, shapeMode === 'core-graph' ? 'strategy3-f' : shapeMode);
+      assert.equal(snapshot.strategy3.dragBehavior, 'stop');
       for (const mode of ['bc', 'd', 'f']) {
         assert.deepEqual(snapshot.strategy3[mode].regionVisible, Array(6).fill(true));
       }
@@ -114,6 +118,7 @@ try {
   ]) assert.throws(() => readController({ [key]: value }), { message });
 
   const modeState = createDefaultStrategy3State();
+  modeState.dragBehavior = 'adjust-neighbors';
   modeState.bc.layout = 'eight';
   modeState.bc.layouts.eight[0] = { left: 0.35, right: 0.35, split: true };
   modeState.bc.disabledPointIds = ['D2'];
@@ -126,6 +131,18 @@ try {
   modeState.f.showDisk = false;
   const current = readController({ version: 11, shapeMode: 'strategy3-bc', strategy3: modeState });
   assert.deepEqual(current.strategy3, modeState);
+  for (const dragBehavior of ['stop', 'adjust-neighbors']) {
+    const selected = { ...modeState, dragBehavior };
+    const roundTrip = readController({ version: 11, strategy3: selected });
+    assert.deepEqual(parseControllerSnapshot(formatControllerSnapshot(roundTrip)).strategy3, selected);
+  }
+  const withoutDragBehavior = structuredClone(modeState);
+  delete withoutDragBehavior.dragBehavior;
+  assert.equal(readController({ version: 11, strategy3: withoutDragBehavior }).strategy3.dragBehavior, 'stop');
+  for (const dragBehavior of [null, 'unknown', true, 0]) {
+    assert.throws(() => readController({ version: 11, strategy3: { ...modeState, dragBehavior } }),
+      { message: 'Invalid Strategy 3 drag behavior.' });
+  }
   for (const construction of ['frontier', 'newton']) {
     const selected = structuredClone(modeState);
     selected.f.pointConstruction = construction;
@@ -213,10 +230,75 @@ try {
   for (const [key, value] of [['coreGraphA', null], ['coreGraphB', '0.5'], ['coreGraphShowDisk', 'true']]) {
     assert.throws(() => readController({ version: 10, [key]: value }), { message: `Invalid ${key}.` });
   }
-  // Invalid case inequalities remain editable; only boundary coordinates/topology are structural constraints.
+  // Decoding preserves structural data; restoration separately resets infeasible layouts.
   const invalidCase = createDefaultStrategy3State();
   invalidCase.bc.layouts.seven[1] = { left: 1, right: 1, split: false };
   assert.deepEqual(sanitizeStrategy3State(invalidCase), invalidCase);
+  assert.deepEqual(readController({ version: 11, strategy3: invalidCase }).strategy3, invalidCase);
+
+  const validRestore = prepareStrategy3Restore(defaultModes);
+  assert.deepEqual(validRestore, { state: defaultModes, resets: [] });
+  assert.notEqual(validRestore.state, defaultModes);
+  const mixedRestore = createDefaultStrategy3State();
+  mixedRestore.dragBehavior = 'adjust-neighbors';
+  mixedRestore.bc.layout = 'seven';
+  mixedRestore.bc.layouts.eight[0].left = 0;
+  mixedRestore.bc.disabledPointIds = ['D2'];
+  mixedRestore.d.disabledPointIds = ['PT'];
+  mixedRestore.f.edgeDots[4] = { left: 0.581, right: 0.581, split: false };
+  mixedRestore.f.showDisk = false;
+  mixedRestore.f.pointConstruction = 'frontier';
+  mixedRestore.f.disabledPointIds = ['Q-', 'D5'];
+  for (const mode of ['bc', 'd', 'f']) mixedRestore[mode].regionVisible.fill(false);
+  const unchangedMixed = structuredClone(mixedRestore);
+  const preparedMixed = prepareStrategy3Restore(mixedRestore);
+  const expectedMixed = structuredClone(mixedRestore);
+  expectedMixed.bc.layouts.eight = structuredClone(defaultModes.bc.layouts.eight);
+  assert.deepEqual(preparedMixed.state, expectedMixed, 'reset only the invalid inactive layout and preserve every preference');
+  assert.deepEqual(preparedMixed.resets.map(({ mode, layout }) => ({ mode, layout })), [{ mode: 'bc', layout: 'eight' }]);
+  assert.ok(preparedMixed.resets[0].reasons.length > 0);
+  assert.deepEqual(mixedRestore, unchangedMixed, 'restore preparation must not mutate its input');
+
+  const missingSupplier = createDefaultStrategy3State();
+  missingSupplier.d.layouts.eight = [[0.2, 0.4], 0.51, 0.46, 0.41, 0.36, [0.2, 0.8]].map((value) =>
+    Array.isArray(value) ? { left: value[0], right: value[1], split: true }
+      : { left: value, right: value, split: false });
+  const { strategy3BoundaryInputs } = await server.ssrLoadModule('/src/strategy3/boundary.ts');
+  const { constructD } = await server.ssrLoadModule('/src/strategy3/geometry.ts');
+  const supplierInputs = strategy3BoundaryInputs('d', missingSupplier.d.layouts.eight);
+  assert.ok(supplierInputs.sourceConditions.every(({ ok }) => ok));
+  assert.ok(constructD({ a: supplierInputs.roles[0].a, epsilon: supplierInputs.capacities[1].radial,
+    beta: supplierInputs.roles[5].b }).conditions.every(({ ok }) => ok));
+  const repairedSupplier = prepareStrategy3Restore(missingSupplier);
+  assert.deepEqual(repairedSupplier.resets, [{ mode: 'd', layout: 'eight',
+    reasons: ['V0: no feasible restricted source triangle was found.'] }],
+  'restore rejects missing actual suppliers even when boundary and witness inequalities pass');
+  assert.deepEqual(repairedSupplier.state, defaultModes);
+
+  const allInvalid = structuredClone(mixedRestore);
+  allInvalid.bc.layouts.seven[1] = { left: 1, right: 1, split: false };
+  allInvalid.d.layout = 'eight';
+  allInvalid.d.layouts.seven[5].right = 1;
+  allInvalid.d.layouts.eight[0].left = 0;
+  allInvalid.f.edgeDots[3] = { left: 0.8, right: 0.8, split: false };
+  const preparedAll = prepareStrategy3Restore(allInvalid);
+  assert.deepEqual(preparedAll.resets.map(({ mode, layout }) => ({ mode, layout })), [
+    { mode: 'bc', layout: 'seven' }, { mode: 'bc', layout: 'eight' },
+    { mode: 'd', layout: 'seven' }, { mode: 'd', layout: 'eight' }, { mode: 'f', layout: null },
+  ]);
+  const expectedAll = structuredClone(allInvalid);
+  expectedAll.bc.layouts = structuredClone(defaultModes.bc.layouts);
+  expectedAll.d.layouts = structuredClone(defaultModes.d.layouts);
+  expectedAll.f.edgeDots = structuredClone(defaultModes.f.edgeDots);
+  assert.deepEqual(preparedAll.state, expectedAll);
+  assert.ok(preparedAll.resets.every(({ reasons }) => reasons.length > 0));
+  assert.deepEqual(prepareStrategy3Restore(preparedAll.state), { state: preparedAll.state, resets: [] });
+  assert.deepEqual(parseControllerSnapshot(formatControllerSnapshot({ ...current, strategy3: preparedAll.state })).strategy3,
+    preparedAll.state, 'repaired snapshots serialize the restored boundaries and retained preferences');
+  const legacyF = readController({ version: 10, coreGraphA: 0.55, coreGraphB: 0.58,
+    coreGraphDisabledPointIds: ['Q0'], coreGraphShowDisk: false });
+  assert.deepEqual(prepareStrategy3Restore(legacyF.strategy3), { state: legacyF.strategy3, resets: [] },
+    'valid migrated F parameters and selections survive feasibility preflight');
   const malformedStates = [null, { bc: { ...modeState.bc, layout: 'unknown' } },
     { f: { ...modeState.f, showDisk: 'true' } },
     { d: { ...modeState.d, disabledPointIds: ['D5'] } }];

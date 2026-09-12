@@ -26,8 +26,18 @@ Boundary handles are the sole coordinate inputs. Witness coordinates and
 regions update from them; witnesses cannot be dragged independently. Point
 checkboxes select witnesses for the displayed convex hull and numerical
 minimum enclosing equilateral triangle. Subset fits are labeled separately.
-Invalid case configurations remain editable, with failed conditions shown.
-Only constructions with undefined coordinates become unavailable.
+Movement preserves the construction/case inequalities and an admissible source
+triangle in each of the six restricted AB families. These checks always use
+the full construction, even when regions or witnesses are hidden.
+
+**Stop that dot** (default) holds all other dots fixed and limits the edited
+position. **Adjust neighboring dots** propagates ordering, nonsupercritical
+handoff, BC tail, and F common-pair corrections around the boundary. If the
+result violates a source or construction constraint, the movement is shortened.
+This is a local correction rule, not a global closest-configuration search.
+Mouse, touch, and numeric edits use the same rules and report blocking limits.
+Strict inequalities use a `1e-9` margin; blocked edits refine the accepted edge
+position to `1e-6` precision.
 
 ## Restricted AB regions
 
@@ -57,9 +67,17 @@ $A_i(S)+B_i(S)>1$. Lower demands $a_i+b_i$ alone do not determine actual reaches
 or certify a covering arrangement.
 
 Sampling uses fewer orientations and offset allocations while dragging, then
-refines after release. Empty sampling results mean no sources were found at
-that resolution, not a proof that the family is empty. The shading is
-illustrative and never supplies the witness coordinates.
+refines after release. A separate source solver constructs and validates a
+unit triangle for each family. Rows without interior-point requirements use
+explicit edge-endpoint constructions; D's midpoint supplier uses supporting
+side constraints and analytically determined orientation intervals. Strict
+vertex/midpoint containment has a `1e-9` margin.
+
+Verified sources seed the shading, so a narrow family remains represented
+even if the orientation sampler misses it. Sample counts do not determine
+movement limits. The shading is illustrative and never supplies witness
+coordinates. Source existence in each family does not certify a global
+covering arrangement.
 
 Strategy 3 reuses the AB Union rendering pipeline for these restricted region
 masks. The six region checkboxes change drawing only; hiding a region leaves
@@ -181,13 +199,20 @@ retains its existing behavior.
 
 Controller snapshots use version 11. They store all BC/D boundary layouts,
 the active layouts, F's boundary inputs, witness selections, each mode's
-region visibility, F's disk visibility, and F's `pointConstruction`
-(`newton` or `frontier`). Regions and witness coordinates are recomputed on loading. Free
+region visibility, F's disk visibility, F's `pointConstruction`
+(`newton` or `frontier`), and the shared `dragBehavior`
+(`stop` or `adjust-neighbors`). Missing movement preferences default to `stop`.
+Regions and witness coordinates are recomputed on loading. Free
 snapshots retain their own version. Older version-11 snapshots without region
 visibility flags load with all six regions visible. Existing version-11 F
 snapshots without `pointConstruction`, and migrated versions 8–10, load in
 **frontier** mode to preserve their original point coordinates. New sessions
 use Newton mode; both explicit selections round-trip without changing it.
+
+Loading checks all five boundary layouts before applying the snapshot. Invalid
+layouts reset to their matching feasible presets, and the load message lists
+each replacement and its reason. Valid layouts, the active layout, witness
+selections, visibility, and F's construction choice are preserved.
 
 Controller versions 8–10 still load. The former `core-graph` mode becomes
 `strategy3-f`. Valid saved F parameters are preserved by setting

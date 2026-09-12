@@ -142,14 +142,20 @@ case checks stay unchanged. Visibility defaults to all six regions and is
 saved independently for BC, D, and F. Within BC or D, the same visibility
 choices apply to both boundary layouts.
 
-Case-invalid configurations remain editable and report their failed
-conditions. Point checkboxes select witnesses for the hull and numerical
+Boundary movement preserves case conditions and a verified source triangle in
+every restricted AB family. **Stop that dot** keeps other handles fixed;
+**Adjust neighboring dots** propagates linked boundary corrections and limits
+movement when source or construction constraints block it. Mouse, touch, and
+numeric edits share these rules. Point checkboxes select witnesses for the hull and numerical
 minimum enclosing triangle; subset fits are labeled separately. The old
 parameter/triangle-source editors and F surface, heatmap, sampling, and slice
 controls have been removed. F retains its optional comparison disk.
 
 Controller snapshots use version 11, storing boundary layouts, region
-visibility, and witness selections. Earlier version-11 snapshots without
+visibility, witness selections, and the shared movement preference (default:
+stop). Loading automatically resets invalid layouts to their feasible presets
+and reports which boundaries changed, preserving other settings.
+Earlier version-11 snapshots without
 visibility flags load with all regions visible. Versions 8–10 load with a migration notice: old F parameters and
 selections are preserved where representable, while independent BC/D
 coordinates and triangle poses initialize the new boundary presets. Other

@@ -18,6 +18,7 @@ import { createFreeController } from '../modes/free/controller';
 import { createHullDebugController } from '../modes/hull-debug/controller';
 import { createStrategy3Controller } from '../modes/strategy3/controller';
 import { createRegionRenderer, type GraphMode } from '../region';
+import { prepareStrategy3Restore } from '../strategy3/restore';
 import type { ShapeMode, TriangleState } from '../types';
 import {
   clampStrictEpsUpperBound,
@@ -167,6 +168,7 @@ export function createApp() {
   function loadControllerSnapshot(raw: string): void {
     const snapshot = parseControllerSnapshot(raw);
     const originalVersion = (JSON.parse(raw) as { version: number }).version;
+    const preparedStrategy3 = prepareStrategy3Restore(snapshot.strategy3);
     const admissibleResult = setAdmissibleOrderedSource(snapshot.admissibleSource);
     if (!admissibleResult.ok) {
       throw new Error(`Admissible source compile error: ${admissibleResult.error}`);
@@ -196,7 +198,7 @@ export function createApp() {
     core.coreCaseOptions.algorithm2Diagonals = snapshot.coreCaseAlgorithm2Diagonals;
     core.coreCaseOptions.strictTwoLineSuperset = snapshot.coreCaseStrictTwoLineSuperset;
     core.setCoreCaseRelaxedPPoints(snapshot.coreCaseRelaxedPPoints);
-    strategy3.restoreState(snapshot.strategy3);
+    strategy3.restoreState(preparedStrategy3.state);
     core.coreCaseTool = 'move';
     setAbUnionTool(core.coreCaseState, 'move');
     ceDirectionSelect.value = base.ceDirection;
@@ -208,9 +210,14 @@ export function createApp() {
     syncModeButtons();
     render();
     syncControllerSnapshot();
-    setControllerStateStatus(originalVersion < 11
+    const loadedStatus = originalVersion < 11
       ? 'Legacy snapshot loaded. BC/D boundary controls initialized; independent parameters and triangle poses retired.'
-      : 'Snapshot loaded.');
+      : 'Snapshot loaded.';
+    const resetStatus = preparedStrategy3.resets.map(({ mode, layout, reasons }) => {
+      const label = `${mode.toUpperCase()}${layout ? ` ${layout === 'seven' ? '7' : '8'}-dot` : ''}`;
+      return `${label} boundaries reset to the feasible preset: ${reasons.map((reason) => reason.replace(/\.$/, '')).join('; ')}.`;
+    });
+    setControllerStateStatus([loadedStatus, ...resetStatus].join(' '));
   }
 
   function toggleSelectedHalfDiagonal(index: number): void {
