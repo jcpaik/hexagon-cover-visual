@@ -3,11 +3,12 @@ import { AB_UNION_REGION_COLORS, renderAbUnionBoundaryControls, renderAbUnionReg
 import { createDefaultAbUnionState } from '../../ab-union/state';
 import type { AbUnionDotHandle, AbUnionState, AbUnionSumConstraintMode } from '../../ab-union/types';
 import { escapeHtml } from '../../app/format';
-import { config, mathToCanvas } from '../../coords';
-import { drawHexagon, drawHexagonLines, HEXAGON_VERTICES } from '../../hexagon';
+import { config } from '../../coords';
+import { drawHexagon, drawHexagonLines } from '../../hexagon';
 import { evaluateStrategy3Boundary, type BoundaryEvaluation, type BoundaryRole } from '../../strategy3/boundary';
 import { checkStrategy3Feasibility, projectStrategy3Move, projectStrategy3SumChange } from '../../strategy3/feasibility';
 import { drawWitnessConstruction } from '../../strategy3/render';
+import { drawStrategy3GapTraces, gapTraceLegend } from '../../strategy3/gapTraces';
 import { prepareStrategy3Restore } from '../../strategy3/restore';
 import {
   createDefaultStrategy3State, strategy3EdgeDots, strategy3SumConstraints,
@@ -182,6 +183,9 @@ export function createStrategy3Controller(deps: Dependencies) {
         <div class="ab-union-toolbar" aria-label="AB region visibility"><span>Visible AB sets</span>
           ${AB_UNION_REGION_COLORS.map((color, index) => `<label style="color:${color}"><input type="checkbox" data-ab-region-visible="${index}" aria-label="Show AB set at V${index}"/>V${index}</label>`).join('')}
         </div>
+        ${active === 'f' ? '' : `<div class="ab-union-section-title">Exact boundary-gap traces</div>
+          <p class="free-small-status">Fills sample the restricted source triangles, not the ordinary AB envelope. A red dashed edge marks the excluded V-gap; nearby interior shading can approach the edge arbitrarily closely. The white halo is a trace annotation, not a planar cut.</p>
+          <div data-strategy3-gap-traces></div>`}
         <div class="ab-union-section-title">Boundary sum locks</div>
         <p class="free-small-status">Lock a + b from the white dots. Each row allows one lock; uncheck it to release. Uppercase A + B is the actual source-triangle sum and always follows the case rule.</p>
         <label class="ab-union-toolbar">Sum ε
@@ -199,7 +203,7 @@ export function createStrategy3Controller(deps: Dependencies) {
         <div class="free-toolbar" data-strategy3-points></div>
         <div data-strategy3-conditions></div>
         <div class="ab-union-section-title">Restricted AB regions and radial bounds</div>
-        <p class="free-small-status">Shading samples the restricted source families. Analytic capacity bounds place the witnesses. Source samples do not certify a covering configuration.</p>
+        <p class="free-small-status">Each shaded pixel center is in a sampled, validated restricted source triangle. Analytic capacities, not this finite sample, place the witnesses. The blue witness hull and yellow fitted triangle are separate overlays, not AB regions. Sampling is illustrative, not a covering certificate.</p>
         <div data-strategy3-reaches></div>`;
     }
     for (const input of deps.controls.querySelectorAll<HTMLInputElement>('[data-strategy3-edge]')) {
@@ -230,6 +234,8 @@ export function createStrategy3Controller(deps: Dependencies) {
       deps.controls.querySelector<HTMLElement>(`[data-strategy3-sum-value="${index}"]`)!.textContent = numberText(role.a + role.b);
       deps.controls.querySelector<HTMLElement>(`[data-strategy3-sum-target="${index}"]`)!.textContent = sums.fixedSums[index] === null ? 'none' : numberText(sums.fixedSums[index]);
     });
+    const gapTraces = deps.controls.querySelector<HTMLElement>('[data-strategy3-gap-traces]');
+    if (gapTraces) gapTraces.innerHTML = gapTraceLegend(edges, AB_UNION_REGION_COLORS);
     const witness = sample.witness;
     const geometryOk = 'geometryApplicable' in witness ? witness.geometryApplicable : witness.domainOk;
     const caseOk = sample.conditions.filter((condition) => condition.group === 'source').every((condition) => condition.ok);
@@ -274,22 +280,8 @@ export function createStrategy3Controller(deps: Dependencies) {
       sourceQuality: quality, colorByRegion: true, showUncovered: false,
     });
     drawHexagonLines(deps.ctx);
-    deps.ctx.save();
-    deps.ctx.strokeStyle = '#dc2626';
-    deps.ctx.lineWidth = 3;
-    deps.ctx.setLineDash([4, 3]);
-    adapter.edgeDots.forEach((edge, index) => {
-      if (!edge.split) return;
-      const start = HEXAGON_VERTICES[index], end = HEXAGON_VERTICES[(index + 1) % 6];
-      const point = (t: number) => mathToCanvas({ x: start.x + t * (end.x - start.x), y: start.y + t * (end.y - start.y) });
-      const left = point(edge.left), right = point(edge.right);
-      deps.ctx.beginPath();
-      deps.ctx.moveTo(left.x, left.y);
-      deps.ctx.lineTo(right.x, right.y);
-      deps.ctx.stroke();
-    });
-    deps.ctx.restore();
     drawWitnessConstruction(deps.ctx, sample.witness, { showDisk: active === 'f' && state.f.showDisk });
+    drawStrategy3GapTraces(deps.ctx, adapter.edgeDots);
     renderAbUnionBoundaryControls(deps.ctx, adapter, { showFMarkTriangle: false, readOnly: true });
     renderControls(active, sample, regions);
   }

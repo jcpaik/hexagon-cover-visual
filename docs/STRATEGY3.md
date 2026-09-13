@@ -105,13 +105,44 @@ movement limits. The shading is illustrative and never supplies witness
 coordinates. Source existence in each family does not certify a global
 covering arrangement.
 
-Strategy 3 reuses the AB Union rendering pipeline for these restricted region
-masks. The six region checkboxes change drawing only; hiding a region leaves
+The renderer samples the finite union of these validated source triangles at
+pixel centers (`src/ab-union/sampledMask.ts`). Scanline intervals rasterize each
+source separately, then take their Boolean union; the existing inside-hexagon
+pixel selection clips it to $H$. Both the region fill and its outline use this
+same sampled mask. No ordinary AB-envelope test, axis hull, planar endpoint
+cut, or antialiased Canvas-alpha threshold substitutes for source membership.
+The verified seed is revalidated before it can contribute any pixels.
+
+In BC/D, red dashed gap traces are drawn **after** the witness hull and fitted
+triangle, and before the boundary handles. A white halo keeps the one-dimensional
+trace legible; it is an annotation, not a geometric cut or a claimed empty
+interior strip. Singleton gaps have a ring around their coincident handles.
+Separate **Exact boundary-gap traces** bars report edge membership directly
+from the prescribed endpoints, even when the gap is smaller than a pixel.
+Closed source triangles include their exact stopping endpoints; the original
+open V triangles exclude them. A shared handoff is not a singleton gap.
+
+The finite source union can approach excluded edge points arbitrarily closely.
+Neither a filled pixel square nor an outline stroke certifies exact boundary
+membership. Unshaded pixels also do not certify exclusion from the full infinite
+family: sampling is a finite subset. Use the trace bars for edge membership and
+the analytic capacities for radial witnesses, not the appearance of the fill.
+The blue witness hull and yellow enclosing candidate are separate overlays,
+not additional AB sources.
+
+Strategy 3 reuses the AB Union composition/visibility pipeline for these restricted
+region masks. The six region checkboxes change drawing only; hiding a region leaves
 its mask, analytic capacities, witness coordinates, and case checks unchanged.
 Each mode remembers its own visibility choices, shared across that mode's
 seven/eight-dot layouts. All regions are visible initially, with colored
 outlines as well as fills. Clicking a vertex highlights its region while
 leaving other visible regions outlined.
+
+Regression checks: `npm run verify:sampled-render` compares the rendered mask
+against independent point-in-triangle tests, checks exact edge exclusions for
+all five default layouts and the two reconstructed screenshot inputs, and
+covers preview/full sampling, equality/narrow families, rejected seeds,
+singletons, and two-gap annotations. It is included in `npm run verify`.
 
 ## Analytic witnesses
 
