@@ -13,22 +13,20 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Export exact public source revision
+      - name: Baseline checks and isolated-runtime export
         run: |
           test "$GITHUB_REF" = refs/heads/chatgpt/sampled-trace-exact-unions-20260913140437
-          mkdir -p /tmp/source-snapshot
-          git archive --format=tar HEAD > /tmp/source-snapshot/source.tar
-          git rev-parse HEAD > /tmp/source-snapshot/commit.txt
-          sha256sum /tmp/source-snapshot/source.tar
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: source-snapshot
-          path: /tmp/source-snapshot
-          retention-days: 3
-          if-no-files-found: error
-      - name: Baseline checks
-        run: |
           npm ci
           npm run verify
           npm run build
           git diff --exit-code
+          mkdir -p /tmp/runtime-snapshot
+          tar -czf /tmp/runtime-snapshot/runtime.tar.gz node_modules dist
+          git rev-parse HEAD > /tmp/runtime-snapshot/commit.txt
+          sha256sum /tmp/runtime-snapshot/runtime.tar.gz
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: runtime-snapshot
+          path: /tmp/runtime-snapshot
+          retention-days: 3
+          if-no-files-found: error
