@@ -13,18 +13,18 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - run: cp .github/sampled-union-delivery.json /tmp/delivery-input.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: delivery-input
-          path: /tmp/delivery-input.json
-          retention-days: 3
       - name: Apply and verify exact source bytes
         run: |
           python - <<'PY'
           import base64, gzip, hashlib, json, pathlib, subprocess
           data = json.loads(pathlib.Path('.github/sampled-union-delivery.json').read_text())
-          patch = gzip.decompress(base64.b64decode(data['patch_gzip_base64'], validate=True))
+          encoded = data['patch_gzip_base64']
+          # Restore three transcription errors identified by a byte-for-byte
+          # comparison of the downloaded payload with the locally tested patch.
+          for old, new in [('3kBX3xJCnvrhTTSxFxBTPyhGT','3kBX3xJCnvrh7pTSxFxBTPyhGT'), ('YDz9FqgRHORVV0TAYtNZ31Lhy','YDz9FqgRHORV0TAYtNZ31Lhy'), ('EyDNBSnL49e/vVQcBcbdaGCLW','EyDNBSnL49e/VQcBcbdaGCLW')]:
+              assert encoded.count(old) == 1
+              encoded = encoded.replace(old, new)
+          patch = gzip.decompress(base64.b64decode(encoded, validate=True))
           assert hashlib.sha256(patch).hexdigest() == '38dcb234bd4c0f0a542fe2ac6f65d8cac67cefd5d2ee01cadafded216b41043d'
           allowed = {'docs/STRATEGY3.md', 'package.json', 'scripts/verify-sampled-render.mjs', 'src/ab-union/render.ts', 'src/ab-union/sampledMask.ts', 'src/modes/strategy3/controller.ts', 'src/strategy3/gapTraces.ts'}
           assert set(data['files']) == allowed
@@ -58,7 +58,11 @@ jobs:
           python - <<'PY'
           import base64, gzip, hashlib, json, pathlib, subprocess
           data = json.loads(pathlib.Path('.github/sampled-union-delivery.json').read_text())
-          patch = gzip.decompress(base64.b64decode(data['patch_gzip_base64'], validate=True))
+          encoded = data['patch_gzip_base64']
+          for old, new in [('3kBX3xJCnvrhTTSxFxBTPyhGT','3kBX3xJCnvrh7pTSxFxBTPyhGT'), ('YDz9FqgRHORVV0TAYtNZ31Lhy','YDz9FqgRHORV0TAYtNZ31Lhy'), ('EyDNBSnL49e/vVQcBcbdaGCLW','EyDNBSnL49e/VQcBcbdaGCLW')]:
+              assert encoded.count(old) == 1
+              encoded = encoded.replace(old, new)
+          patch = gzip.decompress(base64.b64decode(encoded, validate=True))
           assert hashlib.sha256(patch).hexdigest() == '38dcb234bd4c0f0a542fe2ac6f65d8cac67cefd5d2ee01cadafded216b41043d'
           allowed = {'docs/STRATEGY3.md', 'package.json', 'scripts/verify-sampled-render.mjs', 'src/ab-union/render.ts', 'src/ab-union/sampledMask.ts', 'src/modes/strategy3/controller.ts', 'src/strategy3/gapTraces.ts'}
           assert set(data['files']) == allowed
