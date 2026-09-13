@@ -24,7 +24,8 @@ import {
   shouldUseHexAxisHull,
   SQRT3,
 } from './geometry';
-import { abUnionRegionKey, sampleRestrictedAbSources } from './regions';
+import { abUnionRegionKey } from './regionKey';
+import { sampleRestrictedAbMask } from './sampledMask';
 import {
   activeLabel,
   applyAbUnionCoincidenceLocks,
@@ -231,28 +232,11 @@ function prepareSourceMask(
   const key = `${abUnionRegionKey(definition)}:${JSON.stringify(witness ?? null)}`;
   const previous = cache.sourceMasks[definition.index];
   if (previous?.key === key && (previous.quality === 'full' || quality === 'preview')) return previous;
-  const sources = sampleRestrictedAbSources(definition, quality, witness);
-  const triangles = witness ? [...sources.triangles, witness] : sources.triangles;
-  // Rasterize a source union once; model composition never scans its triangles.
-  cache.offctx.clearRect(0, 0, cache.size, cache.size);
-  cache.offctx.beginPath();
-  for (const triangle of triangles) {
-    triangle.forEach((point, index) => {
-      const x = cache.center + cache.scale * point.x;
-      const y = cache.center - cache.scale * point.y;
-      if (index === 0) cache.offctx.moveTo(x, y);
-      else cache.offctx.lineTo(x, y);
-    });
-    cache.offctx.closePath();
-  }
-  cache.offctx.fillStyle = '#000';
-  cache.offctx.fill();
-  const pixels = cache.offctx.getImageData(0, 0, cache.size, cache.size).data;
-  const coverage = Uint8Array.from(cache.pixelIndex, (pixel) => pixels[pixel * 4 + 3] >= 128 ? 1 : 0);
-  const prepared = {
-    key, quality, coverage, count: triangles.length,
-    status: witness ? `${sources.triangles.length} sampled sources + verified source` : sources.status,
-  };
+  const sampled = sampleRestrictedAbMask(definition, quality, cache, witness);
+  // Clip to H by selecting only the existing inside-hexagon pixel centers.
+  // Both the displayed fill and its outline use this same restricted mask.
+  const coverage = Uint8Array.from(cache.pixelIndex, (pixel) => sampled.coverage[pixel]);
+  const prepared = { key, quality, coverage, count: sampled.count, status: sampled.status };
   cache.sourceMasks[definition.index] = prepared;
   return prepared;
 }
