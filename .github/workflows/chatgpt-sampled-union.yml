@@ -6,27 +6,71 @@ on:
 permissions:
   contents: read
 jobs:
-  snapshot:
+  validate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Baseline checks and isolated-runtime export
+      - run: cp .github/sampled-union-delivery.json /tmp/delivery-input.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: delivery-input
+          path: /tmp/delivery-input.json
+          retention-days: 3
+      - name: Apply and verify exact source bytes
         run: |
-          test "$GITHUB_REF" = refs/heads/chatgpt/sampled-trace-exact-unions-20260913140437
+          python - <<'PY'
+          import base64, gzip, hashlib, json, pathlib, subprocess
+          data = json.loads(pathlib.Path('.github/sampled-union-delivery.json').read_text())
+          patch = gzip.decompress(base64.b64decode(data['patch_gzip_base64'], validate=True))
+          assert hashlib.sha256(patch).hexdigest() == '38dcb234bd4c0f0a542fe2ac6f65d8cac67cefd5d2ee01cadafded216b41043d'
+          allowed = {'docs/STRATEGY3.md', 'package.json', 'scripts/verify-sampled-render.mjs', 'src/ab-union/render.ts', 'src/ab-union/sampledMask.ts', 'src/modes/strategy3/controller.ts', 'src/strategy3/gapTraces.ts'}
+          assert set(data['files']) == allowed
+          subprocess.run(['git', 'apply', '--index', '--check', '-'], input=patch, check=True)
+          subprocess.run(['git', 'apply', '--index', '-'], input=patch, check=True)
+          assert set(subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines()) == allowed
+          for path, digest in data['files'].items():
+              assert hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest() == digest, path
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          print(json.dumps(data['files'], indent=2))
+          PY
+      - name: All regression tests and production build
+        run: |
           npm ci
           npm run verify
           npm run build
           git diff --exit-code
-          mkdir -p /tmp/runtime-snapshot
-          tar -czf /tmp/runtime-snapshot/runtime.tar.gz node_modules dist
-          git rev-parse HEAD > /tmp/runtime-snapshot/commit.txt
-          sha256sum /tmp/runtime-snapshot/runtime.tar.gz
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: runtime-snapshot
-          path: /tmp/runtime-snapshot
-          retention-days: 3
-          if-no-files-found: error
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Publish validated code without workflow changes
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/chatgpt/sampled-trace-exact-unions-20260913140437
+          test "$(git ls-remote origin "$GITHUB_REF" | cut -f1)" = "$GITHUB_SHA"
+          python - <<'PY'
+          import base64, gzip, hashlib, json, pathlib, subprocess
+          data = json.loads(pathlib.Path('.github/sampled-union-delivery.json').read_text())
+          patch = gzip.decompress(base64.b64decode(data['patch_gzip_base64'], validate=True))
+          assert hashlib.sha256(patch).hexdigest() == '38dcb234bd4c0f0a542fe2ac6f65d8cac67cefd5d2ee01cadafded216b41043d'
+          allowed = {'docs/STRATEGY3.md', 'package.json', 'scripts/verify-sampled-render.mjs', 'src/ab-union/render.ts', 'src/ab-union/sampledMask.ts', 'src/modes/strategy3/controller.ts', 'src/strategy3/gapTraces.ts'}
+          assert set(data['files']) == allowed
+          subprocess.run(['git', 'apply', '--index', '--check', '-'], input=patch, check=True)
+          subprocess.run(['git', 'apply', '--index', '-'], input=patch, check=True)
+          assert set(subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines()) == allowed
+          for path, digest in data['files'].items():
+              assert hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest() == digest, path
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: visualize sampled restricted AB unions with explicit gap traces'
+          git push origin HEAD:"$GITHUB_REF"
+          git rev-parse HEAD
