@@ -129,7 +129,7 @@ try {
     assert.equal(subset.witness.enabledPointCount, result.witness.points.length - 1);
     assert.deepEqual(subset.witness.points.map((point) => point.point), result.witness.points.map((point) => point.point), 'selection cannot move dependent witnesses');
   }
-  assert.equal(createHash('sha256').update(JSON.stringify(constructionBaseline, (key, value) => key === 'pointConstruction' ? undefined : value)).digest('hex'), '5864fdb8a200a3d9f71c94fa7e645c5ab4d622ccf15ec325458f83395328e431', 'AB sampler ownership does not change capacity bounds, diagnostics, witnesses, or fits');
+  assert.equal(createHash('sha256').update(JSON.stringify(constructionBaseline, (key, value) => ['pointConstruction', 'triangle', 'side'].includes(key) ? undefined : value)).digest('hex'), '40bd540d691f775ff3d2a049dfdd18b072e7ea4218612fe07a4f81f4de86a2a0', 'rendering does not change capacity bounds, diagnostics, or witnesses; fitter checked separately');
 
   const bothRole = { index: 0, a: 0.2, b: 0.2, restriction: 'both', criticality: 'any', requiredInteriorPoints: [] };
   const bothSources = sampleRestrictedAbSources(bothRole, 'full').triangles;

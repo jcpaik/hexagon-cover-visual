@@ -4,11 +4,13 @@ import { dot, edgeVector, lineIntersection, mod6, pointOnEdge } from './geometry
 import { isRestrictedAbSource, SOURCE_INTERIOR_MARGIN } from './feasibility';
 import { abUnionRegionKey } from './regionKey';
 import type { AbUnionRegionDefinition } from './types';
+import { makeTranslationCell, triangleAtOffsets, type TranslationCell } from './translationCells';
 
 export { abUnionRegionKey } from './regionKey';
 
 export interface RestrictedAbSources {
   triangles: Point[][];
+  cells: TranslationCell[];
   status: string;
 }
 
@@ -72,13 +74,15 @@ export function sampleRestrictedAbSources(
 ): RestrictedAbSources {
   const seed = verifiedSource && isRestrictedAbSource(role, verifiedSource) ? verifiedSource : null;
   const seedAngle = seed ? normalAngle({ x: seed[1].y - seed[0].y, y: seed[0].x - seed[1].x }) : null;
-  const slot = role.index + ':' + quality;
   const key = abUnionRegionKey(role) + ':' + seedAngle;
+  const slot = quality + ':' + key;
   const cached = cache.get(slot);
   if (cached?.key === key) return cached.result;
   const triangles: Point[][] = [];
+  const cells: TranslationCell[] = [];
   const finish = (status: string): RestrictedAbSources => {
-    const result = { triangles, status };
+    const result = { triangles, cells, status };
+    if (cache.size >= 24) cache.delete(cache.keys().next().value!);
     cache.set(slot, { key, result });
     return result;
   };
@@ -151,6 +155,12 @@ export function sampleRestrictedAbSources(
       const polygons = role.criticality === 'non-supercritical' ? cuts.map((cut) => clipOffsets(simplex, cut))
         : role.criticality === 'supercritical' ? [cuts.reduce((polygon, cut) => clipOffsets(polygon, { coefficients: cut.coefficients.map((value) => -value) as Offsets, bound: -cut.bound }), simplex)]
           : [simplex];
+      for (const polygon of polygons) {
+        // Keep only validated extreme translations in this convex cell.
+        // Numerical validation may omit a roundoff-degenerate extreme point.
+        const valid = polygon.filter((offsets) => isRestrictedAbSource(role, triangleAtOffsets(normals, offsets)));
+        if (valid.length) cells.push(makeTranslationCell(normals, valid));
+      }
       for (const polygon of polygons) for (const offsets of sampleOffsets(polygon, slackSteps)) {
         const offsetKey = offsets.map((value) => Math.round(value * 1e12)).join(':');
         if (seen.has(offsetKey)) continue;
