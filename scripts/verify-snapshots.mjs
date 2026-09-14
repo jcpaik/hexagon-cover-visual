@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'vite';
 
 const server = await createServer({
@@ -31,6 +32,21 @@ try {
     coreGraphSpecialCurveNeighborhoodOnly: false,
   };
   const readController = (overrides = {}) => parseControllerSnapshot(JSON.stringify({ ...controller, ...overrides }));
+  const maps = await server.ssrLoadModule('/src/maps.ts');
+  const previousDefault = readFileSync(new URL('./fixtures/admissible-default-v11.txt', import.meta.url), 'utf8');
+  for (const version of [8, 9, 10, 11]) {
+    for (const source of [previousDefault, previousDefault.replace(/\n/g, '\r\n')]) {
+      const migrated = readController({ version, admissibleSource: source });
+      assert.equal(migrated.admissibleSource, maps.DEFAULT_ADMISSIBLE_ORDERED_SOURCE, 'known saved default is upgraded');
+      assert.deepEqual(parseControllerSnapshot(formatControllerSnapshot(migrated)), migrated, 'migration is idempotent');
+      assert.ok(maps.setAdmissibleOrderedSource(migrated.admissibleSource).ok);
+      assert.equal(maps.admissible(0.43, 0.438, 1), false, 'loading cannot reinstate the high-c bug');
+    }
+    for (const source of ['return true;', `// Custom experiment\n${previousDefault}`, maps.DEFAULT_ADMISSIBLE_ORDERED_SOURCE]) {
+      assert.equal(readController({ version, admissibleSource: source }).admissibleSource, source, 'custom and current source text is preserved');
+    }
+  }
+  maps.resetAdmissibleOrderedSource();
   const defaultController = readController();
   assert.equal(defaultController.version, 11);
   assert.equal(defaultController.strictEpsUpperBound, 0.0001);

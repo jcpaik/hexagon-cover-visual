@@ -25,17 +25,35 @@ export interface AreaConjTriangle {
   intersection: Point[];
 }
 
-export interface AreaConjResult {
+interface AreaConjResultData {
   index: number;
   a: number;
   b: number;
   sum: number;
-  f: number;
-  deficit: number;
-  feasible: boolean;
-  triangle: AreaConjTriangle | null;
   quality: AreaConjQuality;
   evaluations: number;
+}
+
+export type AreaConjResult = AreaConjResultData & ({
+  status: 'found';
+  f: number;
+  deficit: number;
+  triangle: AreaConjTriangle;
+} | {
+  status: 'infeasible' | 'unresolved';
+  f: null;
+  deficit: null;
+  triangle: null;
+});
+
+export function areaConjTotals(results: readonly AreaConjResult[]): { f: number | null; deficit: number | null } {
+  let f = 0, deficit = 0;
+  for (const result of results) {
+    if (result.status !== 'found') return { f: null, deficit: null };
+    f += result.f;
+    deficit += result.deficit;
+  }
+  return { f, deficit };
 }
 
 interface SearchSpec {
@@ -458,6 +476,25 @@ function anchoredTriangleCandidate(
   return { triangle, source: 'type2', anchor, slot };
 }
 
+function boundaryTriangleCandidate(required: AreaConjRequiredPoints): AreaCandidate | null {
+  const { vertex, aPoint, bPoint } = required;
+  const edge = subtract(bPoint, aPoint);
+  const along = scale(1 / Math.hypot(edge.x, edge.y), edge);
+  const middle = scale(0.5, add(aPoint, bPoint));
+  let normal = { x: along.y, y: -along.x };
+  if (dot(normal, subtract(vertex, middle)) < 0) normal = scale(-1, normal);
+  // The 120° angle at V_i puts it inside the equilateral triangle on AB.
+  // Symmetrically extending that base to unit length preserves containment,
+  // including the isolated orientation at |AB|=1.
+  const vertices = [
+    add(middle, scale(0.5, along)),
+    add(middle, scale(-0.5, along)),
+    add(middle, scale(SQRT3 / 2, normal)),
+  ];
+  if (!triangleContainsPoints(vertices, [vertex, aPoint, bPoint])) return null;
+  return { triangle: evaluateTriangleVertices(vertices), source: 'generic' };
+}
+
 function refineAnchoredTriangle(
   start: AnchoredTriangleCandidate,
   points: Point[],
@@ -488,7 +525,7 @@ function refineAnchoredTriangle(
 }
 
 function cacheKey(index: number, a: number, b: number, quality: AreaConjQuality, t3Like: boolean): string {
-  return `${mod6(index)}:${a.toFixed(6)}:${b.toFixed(6)}:${quality}:${t3Like ? 't3' : 'all'}`;
+  return `${mod6(index)}:${a}:${b}:${quality}:${t3Like ? 't3' : 'all'}`;
 }
 
 function cacheResult(key: string, result: AreaConjResult): AreaConjResult {
@@ -527,6 +564,13 @@ export function computeAreaConjResult(
   const cached = resultCache.get(key);
   if (cached) return cached;
 
+  if (a * a + a * b + b * b > 1 + EPS) {
+    return cacheResult(key, {
+      index: mod6(index), a, b, sum: a + b, quality, evaluations: 0,
+      status: 'infeasible', f: null, deficit: null, triangle: null,
+    });
+  }
+
   const required = areaConjRequiredPoints(index, a, b);
   const points = [required.vertex, required.aPoint, required.bPoint];
   const spec = searchSpec(quality);
@@ -542,6 +586,11 @@ export function computeAreaConjResult(
   }
 
   if (a + b > 1) {
+    const boundaryCandidate = boundaryTriangleCandidate(required);
+    evaluations++;
+    if (boundaryCandidate && satisfiesAreaConstraint(index, boundaryCandidate.triangle.vertices, t3Like)) {
+      best = chooseCandidate(boundaryCandidate, best);
+    }
     let bestAnchored: AnchoredTriangleCandidate | null = null;
     const anchors = [required.aPoint, required.bPoint];
     for (const anchor of anchors) {
@@ -607,9 +656,9 @@ export function computeAreaConjResult(
       a,
       b,
       sum: a + b,
-      f: 0,
-      deficit: 1,
-      feasible: false,
+      f: null,
+      deficit: null,
+      status: 'unresolved',
       triangle: null,
       quality,
       evaluations,
@@ -624,7 +673,7 @@ export function computeAreaConjResult(
     sum: a + b,
     f,
     deficit: 1 - f,
-    feasible: true,
+    status: 'found',
     triangle: {
       center: best.triangle.center,
       phi: best.triangle.phi,

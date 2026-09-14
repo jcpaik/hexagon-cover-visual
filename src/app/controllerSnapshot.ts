@@ -3,6 +3,7 @@ import type { GraphMode } from '../region';
 import type { CoverChainDirection } from '../cover';
 import { sanitizePointSeeds, type SymmetricPointSeed } from '../symmetricPoints';
 import { CORE_CASE_POINT_IDS, isCoreCasePointId } from '../coreCase';
+import { migrateAdmissibleOrderedSource } from '../maps';
 import { NINE_POINT_IDS } from '../strategy3/geometry';
 import { createDefaultStrategy3State, sanitizeStrategy3State, type Strategy3State } from '../strategy3/state';
 
@@ -339,7 +340,7 @@ export function parseControllerSnapshot(raw: string): ControllerSnapshot {
     },
     manualLocalCs: parsed.manualLocalCs.map(clamp01),
     selectedHalfDiagonalIndices: Array.from(new Set(parsed.selectedHalfDiagonalIndices)),
-    admissibleSource: parsed.admissibleSource,
+    admissibleSource: migrateAdmissibleOrderedSource(parsed.admissibleSource),
     strictCheckEnabled: parsed.strictCheckEnabled ?? false,
     strictEps: clampStrictEpsValue(parsed.strictEps ?? 0, parsedStrictEpsUpperBound),
     strictEpsUpperBound: parsedStrictEpsUpperBound,

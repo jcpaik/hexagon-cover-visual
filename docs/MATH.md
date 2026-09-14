@@ -99,7 +99,10 @@ So `(a,b,c)` is a purely local description of how a unit equilateral triangle si
 
 ## 5. The admissible set
 
-The **admissible set** `\mathcal A \subset [0,1]^3` is the set of all triples `(a,b,c)` that can occur in the local picture above.
+The **admissible set** `\mathcal A \subset [0,1]^3` consists of lower demands
+`(a,b,c)` whose vertex and three required branch points fit in a closed unit
+equilateral triangle. Its cells follow the corrected
+[local admissibility theorem](https://github.com/dylan0301/hexagon-cover-database/blob/a98c71c12f1b521a1e58353e56b11474e1ec4f9b/proof/2XXX_geometric_lemmas/20XX_V_triangle_geometry/2004_admissible_set.md).
 
 It is symmetric under interchange of the two boundary-edge coordinates:
 \[
@@ -111,7 +114,7 @@ a \le b.
 \]
 The full admissible set is then recovered by symmetry, i.e. by swapping `a` and `b` when `a>b`.
 
-In the ordered half `a \le b`, the admissible set is the union of the following three closed semialgebraic cells.
+In the ordered half `a \le b`, the admissible set is the union of the following three semialgebraic cells.
 
 ### Ordered Cell 1
 \[
@@ -146,13 +149,18 @@ a^2+ab+b^2 \le 1
 \[
 ((a+b)^2-1)c^2 + bc - b^2 \le 0
 \]
+\[
+c\le 2b
+\]
+The last condition selects the component containing `c=0`. Without it, the
+quadratic inequality also accepts a nongeometric high-`c` component.
 
 ### Ordered Cell 3
 \[
 a \le b
 \]
 \[
-a+b \ge 1
+a+b > 1
 \]
 \[
 a^2+ab+b^2 \le 1
@@ -177,6 +185,22 @@ So the decomposition is governed by one symmetry and two regime changes:
   \[
   (a+b)^4-(a+b)^2+ab = 0.
   \]
+
+### Strict containment margin
+
+For the default predicate, `strictEps` is the minimum perpendicular distance
+of each required point from every side of the containing unit triangle.
+Moving all three sides inward by $\varepsilon$ leaves an equilateral triangle
+of side $L=1-2\sqrt3\varepsilon$. For $L>0$, the app evaluates the closed cells
+on $(a/L,b/L,c/L)$, rejecting scaled coordinates outside the unit domain.
+For $L=0$ only the all-zero demand is possible; $L<0$ is infeasible.
+Zero margin uses closed containment within numerical tolerance.
+
+Symmetry equality and internal cell transitions are retained: neither is
+necessarily a boundary of geometric feasibility. Custom editor formulas
+continue to receive the original unscaled demands and `STRICT_EPS`.
+The historical propagation model still uses its existing `+strictEps`
+handoff overlap convention separately from this local containment test.
 
 ## 6. How the inner gamma talks to a $V_i$-triangle
 

@@ -167,7 +167,7 @@ export function createApp() {
 
   function loadControllerSnapshot(raw: string): void {
     const snapshot = parseControllerSnapshot(raw);
-    const originalVersion = (JSON.parse(raw) as { version: number }).version;
+    const original = JSON.parse(raw) as { version: number; admissibleSource: string };
     const preparedStrategy3 = prepareStrategy3Restore(snapshot.strategy3);
     const admissibleResult = setAdmissibleOrderedSource(snapshot.admissibleSource);
     if (!admissibleResult.ok) {
@@ -210,7 +210,7 @@ export function createApp() {
     syncModeButtons();
     render();
     syncControllerSnapshot();
-    const loadedStatus = originalVersion < 11
+    const loadedStatus = original.version < 11
       ? 'Legacy snapshot loaded. BC/D boundary controls initialized; independent parameters and triangle poses retired.'
       : 'Snapshot loaded.';
     const resetStatus = preparedStrategy3.resets.map(({ mode, layout, reasons, action }) => {
@@ -218,7 +218,9 @@ export function createApp() {
       const change = action === 'locks-cleared' ? 'inconsistent sum locks cleared' : 'boundaries reset to the feasible preset; sum locks cleared';
       return `${label} ${change}: ${reasons.map((reason) => reason.replace(/\.$/, '')).join('; ')}.`;
     });
-    setControllerStateStatus([loadedStatus, ...resetStatus].join(' '));
+    const predicateStatus = snapshot.admissibleSource !== original.admissibleSource
+      ? ['Default admissibility updated to the corrected proof formula and geometric strict margin.'] : [];
+    setControllerStateStatus([loadedStatus, ...predicateStatus, ...resetStatus].join(' '));
   }
 
   function toggleSelectedHalfDiagonal(index: number): void {

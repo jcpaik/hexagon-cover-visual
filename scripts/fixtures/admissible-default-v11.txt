@@ -1,0 +1,22 @@
+const strict = Math.max(0, STRICT_EPS);
+const sum = a + b;
+const circle = a * a + a * b + b * b;
+if (circle > 1 - strict + EPS) {
+  return false;
+}
+
+const transition = sum ** 4 - sum * sum + a * b;
+const cell1 =
+  sum <= 1 - strict + EPS &&
+  transition <= -strict + EPS &&
+  c ** 4 - c * c + a * c - a * a <= -strict + EPS;
+const cell2 =
+  sum <= 1 - strict + EPS &&
+  transition >= strict - EPS &&
+  (sum * sum - 1) * c * c + b * c - b * b <= -strict + EPS;
+const cell3 =
+  sum >= 1 + strict - EPS &&
+  c <= 0.5 - strict + EPS &&
+  (a * a - 1) * c * c + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= -strict + EPS;
+
+return cell1 || cell2 || cell3;

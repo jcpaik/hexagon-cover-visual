@@ -31,7 +31,8 @@ This repository contains a Vite + TypeScript web app for exploring unit equilate
 - All geometry is tracked in math coordinates.
 - The left canvas shows the C-triangle or manual `c_i` controls.
 - The right canvas shows `g_c`, pair compositions, or the six-step composition.
-- Strict mode exposes `strictEps` and updates the admissible-set checks and local `c` bounds.
+- Strict mode uses `strictEps` as the required distance to triangle sides in the default admissibility check, matching Free mode. Symmetry and cell-transition boundaries remain admissible when there is geometric clearance. The historical propagation overlap rules still update the local `c` bounds.
+- Loading a snapshot with the known former default admissibility formula upgrades it to the corrected formula and reports the migration. Custom formulas remain unchanged; the snapshot format stays at version 11.
 - The point tool is available in Triangle, `c_i`, Circle, and Free modes.  A click inside the hexagon creates a seed point; each seed contributes its de-duplicated D6 orbit to the coverability check.  Seed handles can be dragged, deleted, or cleared.  Clicks and drags outside the hexagon are ignored.
 - D6 points are covered by the active mode's coverers: C-triangle plus generated V-triangles in Triangle mode, generated V-triangles in `c_i` mode, C-circle plus generated V-triangles in Circle mode, and all seven placed triangles in Free mode.
 - Point seeds are included in the Controller State JSON and in the Free State JSON.
@@ -82,6 +83,9 @@ and $1-f$ measures normalized outside area.
 - `Max Area` numerically searches one pair $(a,b)$, draws its best triangle candidate, and reports $f$ and $1-f$.
 - `Area Conj` uses the six boundary rows to search each local area problem and reports $\sum_i f_i$ and $\sum_i(1-f_i)$.
 - Both modes retain coarse/high search quality and optional T3-like restrictions. The row sum controls include $a+b=1$ and $a+b=1+\delta$. Displayed search values are numerical estimates.
+- A direct triangle on the two boundary anchors supplies a feasible candidate even when the angle grid misses a narrow or isolated orientation. The optimizer still searches for a better candidate; it does not certify the exact maximum.
+- Results distinguish `found`, analytic `infeasible` (anchor distance exceeds one), and `unresolved` (the search found no qualifying candidate). Missing estimates display `—`, never zero area or unit deficit. Six-row totals are unavailable if any row lacks an estimate. For a found candidate, its area estimates $f$ from below and its outside area estimates $1-f$ from above, within numerical tolerance.
+- `npm run verify:proof-geometry` checks the corrected admissibility cells, geometric strict margins, area candidates, and unavailable totals. It is included in `npm run verify`.
 
 The area inequality is proved by Strategy 2 of the paper: for feasible cyclic
 handoffs $(a_i,b_i)=(1-x_{i-1},x_i)$ with $x_i\in(0,1)$ and at least two

@@ -68,8 +68,8 @@ export function isMaxAreaParam(value: string | undefined): value is 'a' | 'b' {
   return value === 'a' || value === 'b';
 }
 
-export function formatAreaNumber(value: number): string {
-  return value.toFixed(6);
+export function formatAreaNumber(value: number | null): string {
+  return value === null ? '—' : value.toFixed(6);
 }
 
 export function areaConjToolText(tool: AbUnionTool): string {

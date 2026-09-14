@@ -32,6 +32,7 @@ import {
 } from '../../app/format';
 import {
   areaConjRequiredPoints,
+  areaConjTotals,
   computeAreaConjResult,
   type AreaConjQuality,
   type AreaConjResult,
@@ -67,6 +68,12 @@ interface Dependencies {
   readonly canvas: HTMLCanvasElement;
   readonly triangleState: TriangleState;
   readonly manualLocalCs: number[];
+}
+
+function areaResultStatus(result: AreaConjResult): string {
+  return result.status === 'found' ? 'realizing triangle found; numerical estimate'
+    : result.status === 'infeasible' ? 'infeasible: boundary points are more than unit distance apart'
+      : 'no qualifying triangle found at this search resolution';
 }
 
 export function createAreaController(deps: Dependencies) {
@@ -288,14 +295,14 @@ export function createAreaController(deps: Dependencies) {
     drawMaxAreaMode(deps.ctx);
 
     deps.gammaValues.textContent = `max area: a=${formatAreaNumber(maxAreaState.a)}, b=${formatAreaNumber(maxAreaState.b)}, a+b=${formatAreaNumber(maxAreaState.a + maxAreaState.b)}`;
-    deps.localCBounds.textContent = `f(a,b)=${formatAreaNumber(maxAreaState.result.f)}, 1-f=${formatAreaNumber(maxAreaState.result.deficit)}`;
+    deps.localCBounds.textContent = `estimates: f(a,b)=${formatAreaNumber(maxAreaState.result.f)}, 1-f=${formatAreaNumber(maxAreaState.result.deficit)}`;
     deps.localCValues.textContent = maxAreaState.dirty
       ? 'stale: recompute after commit'
       : `quality=${maxAreaState.quality}, constraint=${areaSumModeText(maxAreaState.sumConstraintMode)}, T3-like=${maxAreaState.t3Like ? 'on' : 'off'}, evaluations=${maxAreaState.result.evaluations}`;
     deps.ceStatus.textContent = 'Max Area: CE/g-chain inactive';
     deps.ceStatus.style.color = '#475569';
-    deps.ceChainStatus.textContent = maxAreaState.result.feasible ? 'realizing triangle found' : 'infeasible; using f=0';
-    deps.ceChainStatus.style.color = maxAreaState.result.feasible ? '#047857' : '#b91c1c';
+    deps.ceChainStatus.textContent = areaResultStatus(maxAreaState.result);
+    deps.ceChainStatus.style.color = maxAreaState.result.status === 'found' ? '#047857' : '#b91c1c';
     deps.coverOverlayStatus.textContent = 'Max Area owns triangle overlay';
     deps.coverOverlayStatus.style.color = '#64748b';
   }
@@ -304,8 +311,8 @@ export function createAreaController(deps: Dependencies) {
     const result = maxAreaState.result;
     const status = maxAreaState.dirty
       ? 'stale: release slider or press Enter to recompute'
-      : result.feasible ? 'ready' : 'infeasible; using f=0';
-    const statusClass = maxAreaState.dirty ? 'ab-union-pill is-warn' : result.feasible ? 'ab-union-pill is-good' : 'ab-union-pill empty';
+      : areaResultStatus(result);
+    const statusClass = maxAreaState.dirty ? 'ab-union-pill is-warn' : result.status === 'found' ? 'ab-union-pill is-good' : 'ab-union-pill empty';
     const triangleText = result.triangle
       ? `center=(${result.triangle.center.x.toFixed(4)}, ${result.triangle.center.y.toFixed(4)}), theta=${(result.triangle.phi * 180 / Math.PI).toFixed(2)} deg`
       : 'none';
@@ -344,8 +351,8 @@ export function createAreaController(deps: Dependencies) {
       <span>constraint</span><strong>${escapeHtml(constraintText)}</strong>
       <span>T3-like</span><strong>${maxAreaState.t3Like ? 'on' : 'off'}</strong>
       <span>delta</span><strong>${formatAreaNumber(areaConstraintDelta)}</strong>
-      <span>f(a,b)</span><strong>${formatAreaNumber(result.f)}</strong>
-      <span>1-f(a,b)</span><strong>${formatAreaNumber(result.deficit)}</strong>
+      <span>f(a,b) estimate</span><strong>${formatAreaNumber(result.f)}</strong>
+      <span>1-f(a,b) estimate</span><strong>${formatAreaNumber(result.deficit)}</strong>
       <span>quality</span><strong>${escapeHtml(maxAreaState.quality)}</strong>
       <span>evaluations</span><strong>${result.evaluations}</strong>
       <span>realizer</span><strong>${escapeHtml(triangleText)}</strong>
@@ -367,16 +374,17 @@ export function createAreaController(deps: Dependencies) {
       <button type="button" class="free-button${areaConjState.tool === tool ? ' is-active' : ''}" data-area-tool="${tool}"${disabled ? ' disabled' : ''}>${areaConjToolText(tool)}</button>
     `;
     }).join('');
-    const totalF = areaConjResults.reduce((sum, result) => sum + result.f, 0);
-    const totalDeficit = areaConjResults.reduce((sum, result) => sum + result.deficit, 0);
-    const infeasibleCount = areaConjResults.filter((result) => !result.feasible).length;
+    const totals = areaConjTotals(areaConjResults);
+    const infeasibleCount = areaConjResults.filter((result) => result.status === 'infeasible').length;
+    const unresolvedCount = areaConjResults.filter((result) => result.status === 'unresolved').length;
     const gtOneCount = boundary.regionRows.filter((row) => row.sum > 1 + 1e-9).length;
     const t3LikeCount = areaConjT3Like.filter(Boolean).length;
-    const staleText = areaConjDirty ? 'stale: current dots changed; f rows update after commit' : 'ready';
-    const staleClass = areaConjDirty ? 'ab-union-pill is-warn' : 'ab-union-pill is-good';
+    const staleText = areaConjDirty ? 'stale: current dots changed; f rows update after commit'
+      : totals.f === null ? 'totals unavailable: some rows have no area estimate' : 'numerical estimates ready';
+    const staleClass = areaConjDirty || totals.f === null ? 'ab-union-pill is-warn' : 'ab-union-pill is-good';
     const regionRowsHtml = boundary.regionRows.map((row) => {
       const result = areaConjResults[row.index];
-      const feasibleClass = result?.feasible ? 'active' : 'empty';
+      const feasibleClass = result.status === 'found' ? 'active' : 'empty';
       const currentTitle = row.sumConstraintMode === 'current' && row.fixedSum !== null
         ? `fix current a${row.index}+b${row.index} = ${row.fixedSum.toFixed(4)}`
         : `fix current a${row.index}+b${row.index}`;
@@ -392,9 +400,9 @@ export function createAreaController(deps: Dependencies) {
         <td>${row.a.toFixed(4)}</td>
         <td>${row.b.toFixed(4)}</td>
         <td>${row.sum.toFixed(4)}</td>
-        <td>${result ? result.f.toFixed(6) : '0.000000'}</td>
-        <td>${result ? result.deficit.toFixed(6) : '1.000000'}</td>
-        <td><span class="ab-union-pill ${feasibleClass}">${result?.feasible ? 'ok' : 'f=0'}</span></td>
+        <td>${formatAreaNumber(result.f)}</td>
+        <td>${formatAreaNumber(result.deficit)}</td>
+        <td><span class="ab-union-pill ${feasibleClass}" title="${areaResultStatus(result)}">${result.status === 'found' ? 'estimate' : result.status}</span></td>
       </tr>
     `;
     }).join('');
@@ -432,11 +440,12 @@ export function createAreaController(deps: Dependencies) {
     </div>
     <div class="ab-union-readout">
       <span>status</span><strong><span class="${staleClass} status-reserve">${escapeHtml(staleText)}</span></strong>
-      <span>Σ f_i</span><strong>${totalF.toFixed(6)}</strong>
-      <span>Σ (1-f_i)</span><strong>${totalDeficit.toFixed(6)}</strong>
+      <span>Σ f_i estimate</span><strong>${formatAreaNumber(totals.f)}</strong>
+      <span>Σ (1-f_i) estimate</span><strong>${formatAreaNumber(totals.deficit)}</strong>
       <span>rows with a_i+b_i &gt; 1</span><strong>${gtOneCount}</strong>
       <span>T3-like rows</span><strong>${t3LikeCount}</strong>
       <span>infeasible rows</span><strong>${infeasibleCount}</strong>
+      <span>unresolved rows</span><strong>${unresolvedCount}</strong>
       <span>active boundaries</span><strong>${escapeHtml(boundary.activeLabel)}</strong>
       <span>quality</span><strong>${escapeHtml(areaConjQuality)}</strong>
       <span>delta</span><strong>${formatAreaNumber(areaConstraintDelta)}</strong>
@@ -476,18 +485,18 @@ export function createAreaController(deps: Dependencies) {
       }
     }
     const boundary = renderAbUnionBoundaryControls(deps.ctx, areaConjState, { showFMarkTriangle: false });
-    const totalF = areaConjResults.reduce((sum, result) => sum + result.f, 0);
-    const totalDeficit = areaConjResults.reduce((sum, result) => sum + result.deficit, 0);
+    const totals = areaConjTotals(areaConjResults);
     deps.gammaValues.textContent = `${formatAbUnionValues('a', abUnionAValues(areaConjState))}; ${formatAbUnionValues('b', abUnionBValues(areaConjState))}`;
-    deps.localCBounds.textContent = `Σf=${totalF.toFixed(6)}, Σ(1-f)=${totalDeficit.toFixed(6)}, quality=${areaConjQuality}`;
+    deps.localCBounds.textContent = `estimates: Σf=${formatAreaNumber(totals.f)}, Σ(1-f)=${formatAreaNumber(totals.deficit)}, quality=${areaConjQuality}`;
     deps.localCValues.textContent = areaConjDirty
       ? 'stale: f rows update after commit'
       : `rows with a_i+b_i>1: ${boundary.regionRows.filter((row) => row.sum > 1 + 1e-9).length}`;
     deps.ceStatus.textContent = 'Area Conj: CE/g-chain inactive';
     deps.ceStatus.style.color = '#475569';
-    deps.ceChainStatus.textContent = areaConjDirty ? 'area values stale during edit' : 'area values current';
-    deps.ceChainStatus.style.color = areaConjDirty ? '#c2410c' : '#047857';
-    deps.coverOverlayStatus.textContent = 'Area Conj overlays: maximizing f_i triangles';
+    deps.ceChainStatus.textContent = areaConjDirty ? 'area estimates stale during edit'
+      : totals.f === null ? 'totals unavailable: some rows have no area estimate' : 'area estimates current';
+    deps.ceChainStatus.style.color = areaConjDirty || totals.f === null ? '#c2410c' : '#047857';
+    deps.coverOverlayStatus.textContent = 'Area Conj overlays: best triangles found';
     deps.coverOverlayStatus.style.color = '#475569';
     deps.regionRenderer.render();
     renderAreaConjPanel(boundary);

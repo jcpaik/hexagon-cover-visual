@@ -8,7 +8,8 @@ type OrderedAdmissiblePredicate = (
   strictEps: number,
 ) => boolean;
 
-export const DEFAULT_ADMISSIBLE_ORDERED_SOURCE = `const strict = Math.max(0, STRICT_EPS);
+// Snapshots store source text; recognize only this known former default.
+const LEGACY_ADMISSIBLE_ORDERED_SOURCE = `const strict = Math.max(0, STRICT_EPS);
 const sum = a + b;
 const circle = a * a + a * b + b * b;
 if (circle > 1 - strict + EPS) {
@@ -30,6 +31,41 @@ const cell3 =
   (a * a - 1) * c * c + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= -strict + EPS;
 
 return cell1 || cell2 || cell3;`;
+
+export const DEFAULT_ADMISSIBLE_ORDERED_SOURCE = `// A side clearance STRICT_EPS leaves an inner triangle of this side length.
+const side = 1 - 2 * Math.sqrt(3) * Math.max(0, STRICT_EPS);
+if (side < 0) return false;
+if (side === 0) return a === 0 && b === 0 && c === 0;
+a /= side;
+b /= side;
+c /= side;
+if (Math.max(a, b, c) > 1 + EPS) return false;
+
+const sum = a + b;
+const circle = a * a + a * b + b * b;
+if (circle > 1 + EPS) return false;
+
+const transition = sum ** 4 - sum * sum + a * b;
+const cell1 =
+  sum <= 1 + EPS &&
+  transition <= EPS &&
+  c ** 4 - c * c + a * c - a * a <= EPS;
+const cell2 =
+  sum <= 1 + EPS &&
+  transition >= -EPS &&
+  c <= 2 * b + EPS &&
+  (sum * sum - 1) * c * c + b * c - b * b <= EPS;
+const cell3 =
+  sum > 1 &&
+  c <= 0.5 + EPS &&
+  (a * a - 1) * c * c + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= EPS;
+
+return cell1 || cell2 || cell3;`;
+
+export function migrateAdmissibleOrderedSource(source: string): string {
+  return source.replace(/\r\n?/g, '\n') === LEGACY_ADMISSIBLE_ORDERED_SOURCE
+    ? DEFAULT_ADMISSIBLE_ORDERED_SOURCE : source;
+}
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -57,26 +93,35 @@ function defaultAdmissibleOrdered(
   c: number,
   strictInput: number,
 ): boolean {
-  const strict = clampNonNegative(strictInput);
+  // Proof 2004's closed cells, scaled to the inner parallel triangle.
+  const side = 1 - 2 * Math.sqrt(3) * clampNonNegative(strictInput);
+  if (side < 0) return false;
+  if (side === 0) return a === 0 && b === 0 && c === 0;
+  a /= side;
+  b /= side;
+  c /= side;
+  if (Math.max(a, b, c) > 1 + EPS) return false;
+
   const sum = a + b;
   const circle = a * a + a * b + b * b;
-  if (circle > 1 - strict + EPS) {
+  if (circle > 1 + EPS) {
     return false;
   }
 
   const transition = sum ** 4 - sum * sum + a * b;
   const cell1 =
-    sum <= 1 - strict + EPS &&
-    transition <= -strict + EPS &&
-    c ** 4 - c * c + a * c - a * a <= -strict + EPS;
+    sum <= 1 + EPS &&
+    transition <= EPS &&
+    c ** 4 - c * c + a * c - a * a <= EPS;
   const cell2 =
-    sum <= 1 - strict + EPS &&
-    transition >= strict - EPS &&
-    (sum * sum - 1) * c * c + b * c - b * b <= -strict + EPS;
+    sum <= 1 + EPS &&
+    transition >= -EPS &&
+    c <= 2 * b + EPS &&
+    (sum * sum - 1) * c * c + b * c - b * b <= EPS;
   const cell3 =
-    sum >= 1 + strict - EPS &&
-    c <= 0.5 - strict + EPS &&
-    (a * a - 1) * c * c + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= -strict + EPS;
+    sum > 1 &&
+    c <= 0.5 + EPS &&
+    (a * a - 1) * c * c + (2 * a * b * b + b) * c + (b ** 4 - b * b) <= EPS;
 
   return cell1 || cell2 || cell3;
 }
@@ -112,10 +157,6 @@ function admissibleOrdered(aInput: number, bInput: number, localCInput: number):
   const strict = getEffectiveStrictEps();
 
   if (a > b + EPS) {
-    return false;
-  }
-
-  if (strict > 0 && b - a < strict - EPS) {
     return false;
   }
 
