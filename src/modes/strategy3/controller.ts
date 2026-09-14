@@ -10,6 +10,7 @@ import { checkStrategy3Feasibility, projectStrategy3Move, projectStrategy3SumCha
 import { drawWitnessConstruction } from '../../strategy3/render';
 import { drawStrategy3GapTraces, gapTraceLegend } from '../../strategy3/gapTraces';
 import { prepareStrategy3Restore } from '../../strategy3/restore';
+import { createStrategy3Presentation } from '../../strategy3/presentation';
 import {
   createDefaultStrategy3State, strategy3EdgeDots, strategy3SumConstraints,
   STRATEGY3_SUM_EPSILON_MIN, STRATEGY3_SUM_EPSILON_MAX,
@@ -59,6 +60,7 @@ export function createStrategy3Controller(deps: Dependencies) {
   const evaluations: Partial<Record<Strategy3Mode, { key: string; sample: BoundaryEvaluation }>> = {};
   const adapters = { bc: createDefaultAbUnionState(), d: createDefaultAbUnionState(), f: createDefaultAbUnionState() };
   for (const adapter of Object.values(adapters)) adapter.autoOptimizeTheta = false;
+  const presentation = createStrategy3Presentation({ canvas: deps.canvas, controls: deps.controls, mode, render: deps.render });
   const unusedTriangle: TriangleState = { position: { x: 0, y: 0 }, angle: 0, controlPoint: { x: 0, y: 0 } };
 
   function mode(): Strategy3Mode | null {
@@ -103,7 +105,7 @@ export function createStrategy3Controller(deps: Dependencies) {
   }, true);
 
   const interaction = setupAbUnionInteraction(
-    deps.canvas, () => enabled && mode() !== null, () => adapterFor(mode() ?? 'bc'),
+    deps.canvas, () => enabled && mode() !== null && !presentation.inspectsCanvas(), () => adapterFor(mode() ?? 'bc'),
     unusedTriangle, () => [], () => {}, requestRender,
     {
       moveDotValue: moveDot,
@@ -164,6 +166,7 @@ export function createStrategy3Controller(deps: Dependencies) {
           : role.criticality === 'non-supercritical' ? '<span>The case requires a + b ≤ 1; the 1 + ε lock is unavailable.</span>' : ''}
       </div>`).join('');
       deps.controls.innerHTML = `
+        <div data-s3-presentation></div>
         ${active === 'f' ? '' : `<div class="free-toolbar">Boundary layout
           ${(['seven', 'eight'] as const).map((layout) => `<button type="button" class="free-button" data-strategy3-layout="${layout}" aria-pressed="${state[active].layout === layout}">${layout === 'seven' ? '7 dots · one gap' : '8 dots · two gaps'}</button>`).join('')}
         </div>`}
@@ -184,7 +187,7 @@ export function createStrategy3Controller(deps: Dependencies) {
           ${AB_UNION_REGION_COLORS.map((color, index) => `<label style="color:${color}"><input type="checkbox" data-ab-region-visible="${index}" aria-label="Show AB set at V${index}"/>V${index}</label>`).join('')}
         </div>
         ${active === 'f' ? '' : `<div class="ab-union-section-title">Exact boundary-gap traces</div>
-          <p class="free-small-status">Fills sample the restricted source triangles, not the ordinary AB envelope. A red dashed edge marks the excluded V-gap; nearby interior shading can approach the edge arbitrarily closely. The white halo is a trace annotation, not a planar cut.</p>
+          <p class="free-small-status">Fills use restricted source families, not the ordinary AB envelope. The full infinite family can approach excluded edge points; a finite-resolution fill does not determine exact edge membership. The red gap and white halo are trace annotations, not planar cuts.</p>
           <div data-strategy3-gap-traces></div>`}
         <div class="ab-union-section-title">Boundary sum locks</div>
         <p class="free-small-status">Lock a + b from the white dots. Each row allows one lock; uncheck it to release. Uppercase A + B is the actual source-triangle sum and always follows the case rule.</p>
@@ -203,7 +206,7 @@ export function createStrategy3Controller(deps: Dependencies) {
         <div class="free-toolbar" data-strategy3-points></div>
         <div data-strategy3-conditions></div>
         <div class="ab-union-section-title">Restricted AB regions and radial bounds</div>
-        <p class="free-small-status">Each shaded pixel center is in a sampled, validated restricted source triangle. Analytic capacities, not this finite sample, place the witnesses. The blue witness hull and yellow fitted triangle are separate overlays, not AB regions. Sampling is illustrative, not a covering certificate.</p>
+        <p class="free-small-status">Shading uses sampled orientations and validated convex translation cells, not a global hull. Analytic capacities, not this finite sample, place the witnesses. The blue witness hull and yellow fitted triangle are separate overlays, not AB regions. Sampling is illustrative, not a covering certificate.</p>
         <div data-strategy3-reaches></div>`;
     }
     for (const input of deps.controls.querySelectorAll<HTMLInputElement>('[data-strategy3-edge]')) {
@@ -275,15 +278,23 @@ export function createStrategy3Controller(deps: Dependencies) {
     const feasibility = checkStrategy3Feasibility(active, adapter.edgeDots, strategy3SumConstraints(state, active).fixedSums);
     deps.ctx.clearRect(0, 0, config.canvasSize, config.canvasSize);
     drawHexagon(deps.ctx);
-    const { regions } = renderAbUnionRegions(deps.ctx, adapter, {
+    const view = presentation.current();
+    // Presentation-only visibility never changes the saved boundary roles.
+    const display = { ...adapter, regionVisible: adapter.regionVisible.map((visible, i) =>
+      visible && (view.kind !== 'sources' || !view.solo || i === view.role)) };
+    const regions = view.layers.fills || view.layers.outlines ? renderAbUnionRegions(deps.ctx, display, {
       sourceRegions: sample.roles, sourceWitnesses: feasibility.sources,
       sourceQuality: quality, colorByRegion: true, showUncovered: false,
-    });
+      drawFills: view.layers.fills, drawBoundaries: view.layers.outlines,
+    }).regions : sample.roles.map(() => ({ count: 0, status: 'Source rendering hidden; feasibility still checked' }));
     drawHexagonLines(deps.ctx);
-    drawWitnessConstruction(deps.ctx, sample.witness, { showDisk: active === 'f' && state.f.showDisk });
+    drawWitnessConstruction(deps.ctx, sample.witness, { showDisk: active === 'f' && state.f.showDisk,
+      showHull: view.layers.hull, showTriangle: view.layers.triangle, fillTriangle: view.layers.triangleFill });
+    renderControls(active, sample, regions);
+    presentation.renderControls(active, sample.roles, feasibility.sources, quality);
+    presentation.drawInspection(deps.ctx);
     drawStrategy3GapTraces(deps.ctx, adapter.edgeDots);
     renderAbUnionBoundaryControls(deps.ctx, adapter, { showFMarkTriangle: false, readOnly: true });
-    renderControls(active, sample, regions);
   }
 
   function applyInput(input: HTMLInputElement): void {
@@ -408,6 +419,7 @@ export function createStrategy3Controller(deps: Dependencies) {
       state = restored;
       movementStatus = '';
       panelKey = '';
+      presentation.reset();
       for (const adapter of Object.values(adapters)) adapter.activeRegions.fill(false);
     },
   };

@@ -76,6 +76,7 @@ interface AbUnionRegionRenderOptions {
   colorByRegion?: boolean;
   showUncovered?: boolean;
   drawBoundaries?: boolean;
+  drawFills?: boolean;
   localRegionVariant?: AbUnionLocalRegionVariant;
 }
 
@@ -866,7 +867,7 @@ export function renderAbUnionRegions(
   const uncoveredCount = buildMask(cache, state, options.localRegionVariant ?? 'exact', {
     sourceMasks, colorByRegion: options.colorByRegion, showUncovered: options.showUncovered,
   });
-  ctx.drawImage(cache.offscreen, 0, 0, config.canvasSize, config.canvasSize);
+  if (options.drawFills !== false) ctx.drawImage(cache.offscreen, 0, 0, config.canvasSize, config.canvasSize);
   if (options.drawBoundaries !== false) drawRegionBoundaries(ctx, cache, state, sourceMasks !== undefined);
   return { uncoveredCount, regions: sourceMasks?.map(({ count, status }) => ({ count, status })) ?? [] };
 }

@@ -1,11 +1,10 @@
 import type { Point, TriangleState } from './types';
+import { convexHull } from './convexHull';
 import { maxAdmissibleCoverage } from './maps';
 import { HEXAGON_VERTICES } from './hexagon';
 
 const SQRT3 = Math.sqrt(3);
 const ANGLE_PERIOD = 2 * Math.PI / 3;
-const SEARCH_GRID = 720;
-const SEARCH_ITERS = 32;
 const COVER_EPS = 1e-9;
 
 const COLORS = [
@@ -159,69 +158,30 @@ function centroidFromBeta(points: Point[], beta: number): Point {
   };
 }
 
-function goldenSection(points: Point[], leftInput: number, rightInput: number): {
-  beta: number;
-  radius: number;
-} {
-  let left = leftInput;
-  let right = rightInput;
-  const ratio = (Math.sqrt(5) - 1) / 2;
-  let x1 = right - ratio * (right - left);
-  let x2 = left + ratio * (right - left);
-  let f1 = requiredInradius(points, positiveMod(x1, ANGLE_PERIOD));
-  let f2 = requiredInradius(points, positiveMod(x2, ANGLE_PERIOD));
-
-  for (let i = 0; i < SEARCH_ITERS; i++) {
-    if (f1 > f2) {
-      left = x1;
-      x1 = x2;
-      f1 = f2;
-      x2 = left + ratio * (right - left);
-      f2 = requiredInradius(points, positiveMod(x2, ANGLE_PERIOD));
-    } else {
-      right = x2;
-      x2 = x1;
-      f2 = f1;
-      x1 = right - ratio * (right - left);
-      f1 = requiredInradius(points, positiveMod(x1, ANGLE_PERIOD));
-    }
-  }
-
-  const beta = positiveMod((left + right) / 2, ANGLE_PERIOD);
-  return { beta, radius: requiredInradius(points, beta) };
-}
-
-function positiveMod(value: number, period: number): number {
-  return ((value % period) + period) % period;
-}
-
+// Between successive support changes L(theta)=A cos(theta)+B sin(theta)>0,
+// hence L''=-L<0. A minimum occurs at a hull-edge normal (paper 2607/2609).
+// This exhausts orientations; the arithmetic is floating point, not a
+// certified interval comparison with side 1.
 export function fitTriangle(name: string, points: Point[], color: string): CoverTriangle {
-  const gridStep = ANGLE_PERIOD / SEARCH_GRID;
-  let bestIndex = 0;
-  let bestValue = Number.POSITIVE_INFINITY;
-
-  for (let i = 0; i < SEARCH_GRID; i++) {
-    const value = requiredInradius(points, gridStep * i);
-    if (value < bestValue) {
-      bestIndex = i;
-      bestValue = value;
-    }
+  if (!points.length || points.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) {
+    throw new RangeError('An enclosure needs at least one finite point.');
   }
-
-  let best = { beta: 0, radius: Number.POSITIVE_INFINITY };
-  for (let shift = -2; shift <= 2; shift++) {
-    const candidate = goldenSection(
-      points,
-      (bestIndex + shift - 1) * gridStep,
-      (bestIndex + shift + 1) * gridStep,
-    );
-    if (candidate.radius < best.radius) {
-      best = candidate;
-    }
+  const origin = points[0];
+  const translated = points.map((p) => subtract(p, origin));
+  const magnitude = Math.max(...translated.map((p) => Math.max(Math.abs(p.x), Math.abs(p.y))));
+  if (magnitude === 0) return buildTriangle(name, { ...origin }, 0, 0, color);
+  const local = translated.map((p) => scale(1 / magnitude, p));
+  const hull = convexHull(local);
+  let beta = 0, radius = Infinity;
+  for (let i = 0; i < hull.length; i++) {
+    const edge = subtract(hull[(i + 1) % hull.length], hull[i]);
+    const angle = ((Math.atan2(-edge.x, edge.y) % ANGLE_PERIOD) + ANGLE_PERIOD) % ANGLE_PERIOD;
+    const candidate = requiredInradius(hull, angle);
+    if (candidate < radius) { beta = angle; radius = candidate; }
   }
-
-  const center = centroidFromBeta(points, best.beta);
-  return buildTriangle(name, center, best.beta + Math.PI, 2 * SQRT3 * best.radius, color);
+  const center = centroidFromBeta(hull, beta);
+  return buildTriangle(name, add(origin, scale(magnitude, center)), beta + Math.PI,
+    2 * SQRT3 * Math.max(0, radius) * magnitude, color);
 }
 
 function buildCoverSteps(

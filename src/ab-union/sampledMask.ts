@@ -5,11 +5,11 @@ import type { AbUnionRegionDefinition } from './types';
 
 interface RasterView { size: number; center: number; scale: number }
 
-// Sample the actual finite union at pixel centers. Canvas alpha thresholds can
+// Rasterize convex coverage polygons at pixel centers. Canvas alpha thresholds can
 // mark a pixel whose center is outside every source, especially near a gap.
-// Scanline intervals are only a rasterization of each source triangle: they
-// do not replace the source union by a hull, closure, or endpoint half-plane.
-export function rasterizeTriangleUnion(triangles: readonly (readonly Point[])[], view: RasterView): Uint8Array {
+// Scanline intervals rasterize each source or same-orientation feasible-cell
+// polygon separately. They never form a global hull across different cells.
+export function rasterizePolygonUnion(triangles: readonly (readonly Point[])[], view: RasterView): Uint8Array {
   const { size, center, scale } = view;
   const mask = new Uint8Array(size * size);
   for (const triangle of triangles) {
@@ -19,8 +19,8 @@ export function rasterizeTriangleUnion(triangles: readonly (readonly Point[])[],
     for (let row = first; row <= last; row++) {
       const y = row + 0.5;
       let left = Infinity, right = -Infinity;
-      for (let side = 0; side < 3; side++) {
-        const a = points[side], b = points[(side + 1) % 3];
+      for (let side = 0; side < points.length; side++) {
+        const a = points[side], b = points[(side + 1) % points.length];
         if (y < Math.min(a.y, b.y) || y > Math.max(a.y, b.y)) continue;
         if (a.y === b.y) {
           left = Math.min(left, a.x, b.x);
@@ -39,6 +39,15 @@ export function rasterizeTriangleUnion(triangles: readonly (readonly Point[])[],
   return mask;
 }
 
+// Kept for callers rasterizing individual triangles.
+export const rasterizeTriangleUnion = rasterizePolygonUnion;
+
+export function sourceCoveragePolygons(
+  sources: ReturnType<typeof sampleRestrictedAbSources>, seed?: readonly Point[] | null,
+): readonly (readonly Point[])[] {
+  return [...sources.cells.map((cell) => cell.polygon), ...sources.triangles, ...(seed ? [seed] : [])];
+}
+
 export function sampleRestrictedAbMask(
   definition: AbUnionRegionDefinition,
   quality: 'preview' | 'full',
@@ -49,10 +58,10 @@ export function sampleRestrictedAbMask(
   // never an unchecked fallback to an ordinary AB triangle.
   const seed = verifiedSource && isRestrictedAbSource(definition, verifiedSource) ? verifiedSource : null;
   const sources = sampleRestrictedAbSources(definition, quality, seed);
-  const triangles = seed ? [...sources.triangles, seed] : sources.triangles;
+  const polygons = sourceCoveragePolygons(sources, seed);
   return {
-    coverage: rasterizeTriangleUnion(triangles, view),
-    count: triangles.length,
-    status: seed ? `${sources.triangles.length} sampled sources + verified source` : sources.status,
+    coverage: rasterizePolygonUnion(polygons, view),
+    count: sources.triangles.length + (seed ? 1 : 0),
+    status: `${sources.cells.length} fixed-orientation translation cells; ${sources.triangles.length} source samples${seed ? "; verified seed" : ""}`,
   };
 }

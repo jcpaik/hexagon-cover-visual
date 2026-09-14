@@ -40,16 +40,18 @@ try {
   const { HEXAGON_VERTICES: vertices } = await server.ssrLoadModule('/src/hexagon.ts');
   const { algorithm2CStar } = await server.ssrLoadModule('/src/radialCapacity.ts');
 
-  // Captured before extracting radialCapacity.ts: full historical six-point
-  // outputs, including fits, for both ordinary and relaxed circle settings.
+  // Analytic witness baselines from main d9bc974. Fits now use finite
+  // calipers, independently checked in verify-calipers; do not hash solver floats.
   const oldCases = [[0.55, 0.55], [0.64, 0.5], [0.5, 0.64], [0.85, 0.2], [0.51, 0.5], [0.4, 0.72]];
   const oldResults = oldCases.flatMap(([a, b]) => [false, true].map((relaxed) => core.evaluateCoreCaseGraph(a, b, undefined, 'exact', relaxed)));
-  assert.equal(createHash('sha256').update(JSON.stringify(oldResults)).digest('hex'), '018e2b68478f2a2409a1441fd731aa8b612c09699ee564e20474b40b8fd4dfce', 'legacy Core Case behavior is unchanged');
+  assert.equal(createHash('sha256').update(JSON.stringify(oldResults, (key, value) => ['triangle', 'side', 'pointConstruction'].includes(key) ? undefined : value)).digest('hex'), '53a6d5d45f583a59df1bf6a95c998ab74d14bb7fb050252900006881b39de835', 'legacy Core Case analytic geometry is unchanged');
   const oldSupersets = [[0.55, 0.55], [0.8, 0.25], [0.3, 0.74]].flatMap(([a, b]) => [false, true].map((relaxed) => {
     const sample = core.evaluateCoreCaseGraph(a, b, undefined, 'strict-two-line-superset', relaxed);
     return { a, b, relaxed, points: sample.points, side: sample.side };
   }));
-  assert.equal(createHash('sha256').update(JSON.stringify(oldSupersets)).digest('hex'), 'ddb0bdc97e49119ff5a05efe3319260924fda4af8eb0fdedbd85abcb10e185a7', 'pre-extraction two-line Core Case baseline is unchanged');
+  assert.equal(createHash('sha256').update(JSON.stringify(oldSupersets, (key, value) => ['triangle', 'side', 'pointConstruction'].includes(key) ? undefined : value)).digest('hex'), 'ae6dfa844093d98580f71b2ae9f4e59d7301702e23b065225a173d9b6124aef5', 'two-line Core Case witness baseline is unchanged');
+
+  oldResults.forEach(checkEnclosure);
 
   const quartic = algorithm2CStar(0.36, 0.5);
   close(quartic ** 4 - quartic ** 2 + 0.36 * quartic - 0.36 ** 2, 0, 'selected quartic root');
@@ -247,7 +249,7 @@ try {
       assert.ok(invalid.points.every((point) => point.point === null), 'invalid F domain has no fallback witnesses');
     }
   }
-  console.log(`Strategy 3 checks passed: BC/D constructions, actual neighboring traces, F9 roots, ${newtonCases.length} Newton/reflection/segment/enclosure cases, canvas symbols, and 18 unchanged Core Case evaluations.`);
+  console.log(`Strategy 3 checks passed: BC/D constructions, actual neighboring traces, F9 roots, ${newtonCases.length} Newton/reflection/segment/enclosure cases, canvas symbols, and 18 unchanged Core Case witness geometries.`);
 } finally {
   await server.close();
 }

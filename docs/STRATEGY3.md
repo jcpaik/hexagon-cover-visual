@@ -6,6 +6,18 @@ $V_i=(\cos(i\pi/3),\sin(i\pi/3))$, $O=0$, $M_i=V_i/2$, and
 $X_i(t)=(1-t)V_i+tV_{i+1}$. References are pinned to database revision
 `a98c71c`.
 
+## Reading the visualization
+
+Strategy 3 starts in **Witness argument**, without source-region fills and with
+an outline-only enclosing candidate. **Source-family explorer** adds a solo-role
+endpoint-relaxed/exact comparison and a point inspector. Independent layer
+controls keep source regions, witness hull, and candidate distinct. A found
+source is shown individually; an unsuccessful source search is unresolved, not
+an exclusion certificate. The header separates witness provenance, local source
+existence, unverified global covering hypotheses, and floating-point calipers.
+See [SOURCE_EXPLORER.md](SOURCE_EXPLORER.md) for the algorithms, mathematical
+justification, limitations, and isolated interior-difference demonstration.
+
 ## Boundary inputs
 
 | Mode | Boundary handles | Gap edges | Derived witnesses |
@@ -105,9 +117,12 @@ movement limits. The shading is illustrative and never supplies witness
 coordinates. Source existence in each family does not certify a global
 covering arrangement.
 
-The renderer samples the finite union of these validated source triangles at
-pixel centers (`src/ab-union/sampledMask.ts`). Scanline intervals rasterize each
-source separately, then take their Boolean union; the existing inside-hexagon
+The renderer represents all continuous translations within each retained convex
+feasible cell at a sampled orientation (`src/ab-union/translationCells.ts`). Each
+cell has its own Minkowski-sum polygon; no hull is taken across cells or angles.
+Validated individual sources and seeds are retained. Scanline intervals sample
+these polygons at pixel centers (`src/ab-union/sampledMask.ts`) and take their
+Boolean union; the existing inside-hexagon
 pixel selection clips it to $H$. Both the region fill and its outline use this
 same sampled mask. No ordinary AB-envelope test, axis hull, planar endpoint
 cut, or antialiased Canvas-alpha threshold substitutes for source membership.
@@ -122,7 +137,9 @@ from the prescribed endpoints, even when the gap is smaller than a pixel.
 Closed source triangles include their exact stopping endpoints; the original
 open V triangles exclude them. A shared handoff is not a singleton gap.
 
-The finite source union can approach excluded edge points arbitrarily closely.
+The full infinite source family can approach a fixed excluded edge point
+arbitrarily closely. A fixed finite union of closed samples/cell polygons is
+closed, but its positive distance to an excluded point can be subpixel.
 Neither a filled pixel square nor an outline stroke certifies exact boundary
 membership. Unshaded pixels also do not certify exclusion from the full infinite
 family: sampling is a finite subset. Use the trace bars for edge membership and
@@ -134,8 +151,9 @@ Strategy 3 reuses the AB Union composition/visibility pipeline for these restric
 region masks. The six region checkboxes change drawing only; hiding a region leaves
 its mask, analytic capacities, witness coordinates, and case checks unchanged.
 Each mode remembers its own visibility choices, shared across that mode's
-seven/eight-dot layouts. All regions are visible initially, with colored
-outlines as well as fills. Clicking a vertex highlights its region while
+seven/eight-dot layouts. All saved region visibility flags start enabled, but
+the default witness view hides region layers. The source view starts with a
+solo-role fill and outline. Clicking a vertex highlights its region while
 leaving other visible regions outlined.
 
 Regression checks: `npm run verify:sampled-render` compares the rendered mask
@@ -250,7 +268,8 @@ $\widehat K=\operatorname{conv}(\mathcal D_\eta\cup\{A,B,C\})
 \subseteq\operatorname{conv}(K_N)\subseteq\operatorname{conv}(K_F)$.
 Disabling radial witnesses removes the guarantee that the selected hull
 contains the comparison disk. The displayed side always uses only enabled
-points; numerical fitting is not an exact certificate. The former F surface, heatmap, slice, and
+points. Hull-edge calipers exhaust the finite-point support orientations, but
+floating-point evaluation is not an exact inequality certificate. The former F surface, heatmap, slice, and
 sampling controls have been removed. The separate exploratory Core Case mode
 retains its existing behavior.
 

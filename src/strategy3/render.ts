@@ -1,4 +1,4 @@
-import { drawCoverTriangleOverlay } from '../app/drawing';
+import { convexHull } from '../convexHull';
 import { mathToCanvas, scaleToCanvas } from '../coords';
 import type { CoverTriangle } from '../cover';
 import type { Point } from '../types';
@@ -13,22 +13,8 @@ interface WitnessConstruction {
 interface WitnessRenderOptions {
   showHull?: boolean;
   showDisk?: boolean;
-}
-
-function convexHull(points: Point[]): Point[] {
-  const sorted = points.slice().sort((a, b) => a.x - b.x || a.y - b.y)
-    .filter((point, index, all) => index === 0 || point.x !== all[index - 1].x || point.y !== all[index - 1].y);
-  if (sorted.length < 3) return sorted;
-  const turn = (a: Point, b: Point, c: Point) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-  const half = (ordered: Point[]) => {
-    const result: Point[] = [];
-    for (const point of ordered) {
-      while (result.length >= 2 && turn(result[result.length - 2], result[result.length - 1], point) <= 0) result.pop();
-      result.push(point);
-    }
-    return result.slice(0, -1);
-  };
-  return [...half(sorted), ...half(sorted.slice().reverse())];
+  showTriangle?: boolean;
+  fillTriangle?: boolean;
 }
 
 export function drawWitnessConstruction(
@@ -73,7 +59,17 @@ export function drawWitnessConstruction(
     ctx.fill();
     ctx.stroke();
   }
-  if (construction.triangle) drawCoverTriangleOverlay(ctx, [construction.triangle]);
+  if (construction.triangle && options.showTriangle !== false) {
+    const vertices = construction.triangle.vertices.map(mathToCanvas);
+    ctx.beginPath();
+    ctx.moveTo(vertices[0].x, vertices[0].y);
+    for (const point of vertices.slice(1)) ctx.lineTo(point.x, point.y);
+    ctx.closePath();
+    ctx.strokeStyle = construction.triangle.color;
+    ctx.lineWidth = 2;
+    if (options.fillTriangle) { ctx.fillStyle = `${construction.triangle.color}29`; ctx.fill(); }
+    ctx.stroke();
+  }
   ctx.font = '12px monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';

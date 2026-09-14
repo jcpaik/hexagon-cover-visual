@@ -7,16 +7,16 @@ const server = await createServer({
 });
 const cross = (a, b, p) => (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
 const inside = (triangle, p, tolerance = 0) => {
-  const values = triangle.map((a, i) => cross(a, triangle[(i + 1) % 3], p));
+  const values = triangle.map((a, i) => cross(a, triangle[(i + 1) % triangle.length], p));
   return values.every((v) => v >= -tolerance) || values.every((v) => v <= tolerance);
 };
 const dots = (values) => values.map((v) => Array.isArray(v)
   ? { left: v[0], right: v[1], split: true } : { left: v, right: v, split: false });
-// Independently clip an edge against all three source sides.
+// Independently clip an edge against every source/cell-polygon side.
 function interval(triangle, start, end) {
   let lo = 0, hi = 1;
-  for (let i = 0; i < 3; i++) {
-    const a = triangle[i], b = triangle[(i + 1) % 3];
+  for (let i = 0; i < triangle.length; i++) {
+    const a = triangle[i], b = triangle[(i + 1) % triangle.length];
     const value = cross(a, b, start), slope = cross(a, b, end) - value;
     if (Math.abs(slope) < 1e-14) { if (value < -1e-12) return null; }
     else if (slope > 0) lo = Math.max(lo, -value / slope);
@@ -26,7 +26,7 @@ function interval(triangle, start, end) {
 }
 
 try {
-  const { rasterizeTriangleUnion, sampleRestrictedAbMask } = await server.ssrLoadModule('/src/ab-union/sampledMask.ts');
+  const { rasterizeTriangleUnion, sampleRestrictedAbMask, sourceCoveragePolygons } = await server.ssrLoadModule('/src/ab-union/sampledMask.ts');
   const { sampleRestrictedAbSources } = await server.ssrLoadModule('/src/ab-union/regions.ts');
   const { findRestrictedAbSource, isRestrictedAbSource } = await server.ssrLoadModule('/src/ab-union/feasibility.ts');
   const { strategy3BoundaryInputs } = await server.ssrLoadModule('/src/strategy3/boundary.ts');
@@ -36,7 +36,7 @@ try {
   const view = { size: 48, center: 24, scale: 19.2 };
   const point = (pixel) => ({ x: (pixel % view.size + 0.5 - view.center) / view.scale,
     y: (view.center - Math.floor(pixel / view.size) - 0.5) / view.scale });
-  let pixelChecks = 0, sourceChecks = 0, gapChecks = 0;
+  let pixelChecks = 0, sourceChecks = 0, gapChecks = 0, cellGapChecks = 0;
   const verifyPixels = (triangles, mask, stride = 1) => {
     for (let pixel = 0; pixel < mask.length; pixel += stride) {
       const p = point(pixel);
@@ -74,12 +74,14 @@ try {
     for (const role of roles) {
       const seed = findRestrictedAbSource(role);
       assert.ok(seed && isRestrictedAbSource(role, seed), `${mode} V${role.index}: feasible fixture`);
-      const sources = sampleRestrictedAbSources(role, 'full', seed).triangles;
+      const family = sampleRestrictedAbSources(role, 'full', seed);
+      const sources = family.triangles;
+      const polygons = sourceCoveragePolygons(family, seed);
       const triangles = [...sources, seed];
       const rendered = sampleRestrictedAbMask(role, 'full', view, seed);
       assert.equal(rendered.count, triangles.length);
-      assert.deepEqual(rendered.coverage, rasterizeTriangleUnion(triangles, view), 'renderer uses the exact sampled source list');
-      verifyPixels(triangles, rendered.coverage, 17);
+      assert.deepEqual(rendered.coverage, rasterizeTriangleUnion(polygons, view), 'renderer uses separate fixed-orientation cell polygons and source samples');
+      verifyPixels(polygons, rendered.coverage, 17);
       for (const triangle of triangles) {
         assert.ok(isRestrictedAbSource(role, triangle));
         sourceChecks++;
@@ -90,9 +92,15 @@ try {
           gapChecks++;
         });
       }
+      for (const cell of family.cells) edges.forEach((edge, i) => {
+        if (!edge.split) return;
+        const section = interval(cell.polygon, vertices[i], vertices[(i + 1) % 6]);
+        if (section) assert.ok(section[1] <= edge.left + 1e-9 || section[0] >= edge.right - 1e-9, `${mode} cell hull spills into e${i} gap`);
+        cellGapChecks++;
+      });
       const preview = sampleRestrictedAbMask(role, 'preview', view, seed);
       assert.ok(preview.count > 0);
-      verifyPixels([...sampleRestrictedAbSources(role, 'preview', seed).triangles, seed], preview.coverage, 29);
+      verifyPixels(sourceCoveragePolygons(sampleRestrictedAbSources(role, 'preview', seed), seed), preview.coverage, 29);
     }
   }
   for (const role of [
@@ -103,7 +111,7 @@ try {
     assert.ok(seed, 'equality/narrow source exists');
     const rendered = sampleRestrictedAbMask(role, 'full', view, seed);
     assert.ok(rendered.count > 0 && rendered.coverage.some(Boolean), 'equality/narrow family is actually rendered');
-    verifyPixels([...sampleRestrictedAbSources(role, 'full', seed).triangles, seed], rendered.coverage);
+    verifyPixels(sourceCoveragePolygons(sampleRestrictedAbSources(role, 'full', seed), seed), rendered.coverage);
   }
   const bad = { index: 0, a: 1, b: .2, restriction: 'both', criticality: 'any', requiredInteriorPoints: [] };
   const invalidSeed = findRestrictedAbSource(strategy3BoundaryInputs('bc', defaults.bc.layouts.seven).roles[0]);
@@ -128,6 +136,6 @@ try {
   drawStrategy3GapTraces(ctx, defaults.bc.layouts.eight);
   assert.deepEqual(strokes.map((stroke) => stroke.color), ['#fff', '#dc2626', '#fff', '#dc2626']);
   assert.deepEqual(strokes[1].dash, [4, 3]);
-  console.log(JSON.stringify({ status: 'PASS', fixtures: fixtures.length, pixelChecks, sourceChecks, gapChecks,
-    checks: 'finite sampled masks, independent point membership, no gap intrusion, preview/full, invalid seed, singleton/two-gap traces' }));
+  console.log(JSON.stringify({ status: 'PASS', fixtures: fixtures.length, pixelChecks, sourceChecks, gapChecks, cellGapChecks,
+    checks: 'fixed-orientation cell masks, independent polygon membership, no gap intrusion, preview/full, invalid seed, singleton/two-gap traces' }));
 } finally { await server.close(); }
